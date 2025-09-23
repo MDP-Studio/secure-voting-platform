@@ -1,0 +1,44 @@
+1. SHA-256 MAC / hash of each vote to prevent modification 
+  Integrity: each vote cast shall include the polling client instance id, a serial number 
+  from the polling client, timestamp, vote contents and a SHA-256 hash of all the content. 
+  Integrity checks will be performed on 100% of votes before result computation occurs. 
+
+2. Encryption of voter name and address to protect PII in the electoral roll 
+encrypt DB field contents 
+
+3. The encrypted and sign HMAC audit log (outside the DBMS such as an audit.log file) should record all voting transactions,
+with a timestamp of nanoseconds, be kept for 10 years, and be verified by the annual legal audit. 
+It cannot be tampered with. 
+   Non-repudiation / Integrity: All edits to the CMS by AEC Delegates shall be logged with user,
+   timestamp, edit details, and HMAC SHA-256 row hash, with logs reviewed by auditors within 24 hours of any change. 
+
+4. Confidentiality / Integrity: all storage volumes shall be configured as encrypted volumes with AES-256, 
+using native operating system features. 
+
+5. Implement WAF in Docker configuration with API request rate-limiting 
+application proxy 
+apply rate-limiting, 10 requests per minute, for example 
+
+6. Integrity: Access control roles shall restrict AEC Delegates to modifying
+candidates only within their assigned geographic area, enforced by multiple layers of role checks on every edit. 
+
+7. Voting outside Australia 
+Implement Geo-filtering based on IP 
+allow specific origin IP addresses which may be AEC-approved VPNs 
+
+8. Eligibility Verification and One Vote per Person 
+The system shall ensure that each eligible voter can cast only one ballot. 
+Duplicate voting attempts must be automatically detected and rejected by the vote casting subsystem. 
+
+9. Disaster Recovery and Data Backup 
+The system shall back up all critical election data (votes, logs, configurations) to secure off-site storage every hour. 
+Full system recovery must be possible within two hours to maintain election continuity. 
+
+10. Non-repudiation of Results 
+Final election results shall be digitally signed with the Election Commission’s private key before publication. 
+Any recipient can verify authenticity using the Commission’s public key. 
+
+11. Secure Session Management 
+All user sessions (voter and staff) shall use signed, short-lived tokens (e.g., JWT). 
+Sessions must automatically expire after 15 minutes of inactivity to prevent misuse. 
+
