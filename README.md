@@ -4,25 +4,26 @@
 
 ### Development Setup (Flask)
 
-Since Docker setup is still in progress, use the following steps to run the application locally:
+The Flask application is now ready to run locally:
 
-1. **Navigate to the app directory:**
-   ```bash
-   cd app
-   ```
-
-2. **Install dependencies:**
+1. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Run the Flask application:**
+2. **Run the demo application:**
    ```bash
-   python main.py
+   python run_demo.py
    ```
 
-4. **Access the application:**
+3. **Access the application:**
    Open your browser and go to `http://localhost:5000`
+   
+   **Demo credentials:**
+   - Username: `demo`
+   - Password: `password`
+
+**Note:** The `run_demo.py` script will automatically create a demo user and seed candidate data for testing.
 
 ### Docker Setup (Coming Soon)
 

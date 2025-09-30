@@ -1,5 +1,7 @@
 Flask==2.3.3
-Django>=4.2
-asgiref>=3.6.0
-sqlparse>=0.4.4
+Flask-SQLAlchemy==3.0.5
+Flask-Login==0.6.3
+Flask-WTF==1.1.1
+Werkzeug==2.3.7
+PyMySQL==1.1.0
 
