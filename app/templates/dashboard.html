@@ -23,9 +23,7 @@
                         <div class="card-body">
                             <h5 class="card-title">{{ candidate.name }}</h5>
                             <p class="card-text">
-                                <strong>Party:</strong> {{ candidate.party }}<br>
-                                <strong>Position:</strong> {{ candidate.position }}<br>
-                                <strong>Constituency:</strong> {{ candidate.constituency }}
+                                <strong>Position:</strong> {{ candidate.position }}
                             </p>
                             <form method="POST" action="{{ url_for('main.vote') }}">
                                 <input type="hidden" name="candidate_id" value="{{ candidate.id }}">

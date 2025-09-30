@@ -22,6 +22,16 @@ The Flask application is now ready to run locally:
    **Demo credentials:**
    - Username: `demo`
    - Password: `password`
+   
+   **How to login:**
+   - The login page will load automatically
+   - Leave the "Election" dropdown as-is (it's not functional in the demo)
+   - Enter `demo` in the "Voter ID or Email" field
+   - Enter `password` in the "Password / One-Time Code" field
+   - Leave the "Authenticator Code" field empty (2FA not implemented in demo)
+   - Click "Sign In & Access Ballot"
+   
+   **After login:** You'll see the voting dashboard with 2 demo candidates (Alice Johnson and Bob Smith) running for Mayor. You can vote for one of them, and once voted, you won't be able to vote again.
 
 **Note:** The `run_demo.py` script will automatically create a demo user and seed candidate data for testing.
 
@@ -32,7 +42,9 @@ The Flask application is now ready to run locally:
 - **Auto-initialization:** Tables are created automatically when the app starts
 - **Demo Data:** `run_demo.py` creates:
   - 1 demo user (username: `demo`, password: `password`)
-  - 2 sample candidates (Alice Johnson and Bob Smith for Mayor)
+  - 2 sample candidates for Mayor position (Alice Johnson and Bob Smith)
+
+**Note:** This is a simplified setup for the early phase of the university project. The current model only includes basic candidate information (name and position).
 
 #### Alternative Database Setup
 
@@ -49,9 +61,33 @@ python init_db.py
 
 This creates more comprehensive sample data including multiple candidates for different positions.
 
-### Docker Setup (Coming Soon)
+### Testing
 
-Once Docker setup is complete, you'll be able to run:
-```bash
-docker-compose up --build
-```
+The project includes smoke tests to verify basic functionality:
+
+1. **Install test dependencies:**
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+2. **Run smoke tests:**
+   ```bash
+   python run_tests.py
+   ```
+   
+   Or run tests directly with pytest:
+   ```bash
+   pytest tests/test_smoke.py -v
+   ```
+
+**What the smoke tests verify:**
+- ✅ App creation and database initialization
+- ✅ Login/logout functionality  
+- ✅ User authentication and authorization
+- ✅ Voting process (single vote per user)
+- ✅ Admin access to results
+- ✅ Basic security (prevent double voting)
+
+**Test Results:** All 13 smoke tests pass! 🎉
+
+### Docker Setup (Coming Soon)
