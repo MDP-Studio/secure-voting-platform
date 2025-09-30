@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   web:
-    build: ./app
+    build: .
     container_name: voting_web
     expose:
       - "8000"
