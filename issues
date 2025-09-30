@@ -19,7 +19,7 @@ apply rate-limiting, 10 requests per minute, for example
 6. Integrity: Access control roles shall restrict AEC Delegates to modifying
 candidates only within their assigned geographic area, enforced by multiple layers of role checks on every edit. 
 
-7. Voting outside Australia 
+7. (Word #9) Voting outside Australia 
 Implement Geo-filtering based on IP 
 allow specific origin IP addresses which may be AEC-approved VPNs
 
