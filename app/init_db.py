@@ -1,5 +1,5 @@
-from . import create_app, db
-from .models import User, Candidate, Vote
+from app import create_app, db
+from app.models import User, Candidate, Vote
 
 app = create_app()
 

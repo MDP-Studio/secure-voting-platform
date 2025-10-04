@@ -4,7 +4,7 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 
 class User(UserMixin, db.Model):
-    __tablename__ = "user"
+    __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     email = db.Column(db.String(255), unique=True)
@@ -31,7 +31,7 @@ class Candidate(db.Model):
 class Vote(db.Model):
     __tablename__ = "vote"
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     candidate_id = db.Column(db.Integer, db.ForeignKey("candidate.id", ondelete="CASCADE"), nullable=False, index=True)
     position = db.Column(db.String(120), nullable=False)
     vote_hash = db.Column(db.String(64))
