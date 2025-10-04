@@ -196,7 +196,7 @@
           <!-- Election selector (optional) -->
           <div class="mb-3">
             <label for="election" class="form-label">Election</label>
-            <select id="election" name="election" class="form-control" required>
+            <select id="election" name="election" class="form-control">
                 <option value="" selected disabled>Select your election</option>
                 {% for e in elections or [] %}
                 <option value="{{ e.id }}">{{ e.name }} — {{ e.date.strftime('%b %d, %Y') }}</option>
