@@ -4,3 +4,5 @@ Flask-Login
 PyMySQL
 gunicorn
 cryptography
+geoip2
+
