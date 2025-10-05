@@ -4,6 +4,8 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 
+from .middleware import check_geo_ip
+
 db = SQLAlchemy()
 login_manager = LoginManager()
 login_manager.login_view = 'auth.login'
@@ -11,6 +13,12 @@ login_manager.login_view = 'auth.login'
 
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True, template_folder='templates')
+    #tell flask to run the geo-ip check before each request
+    app.before_request(check_geo_ip)
+    # register blureprints and other stuff here
+    from .auth import auth as auth_blueprint
+    app.register_blueprint(auth_blueprint)
+    # default config
     app.config.from_mapping(
         SECRET_KEY=os.environ.get('SECRET_KEY', 'dev-secret'),
         SQLALCHEMY_DATABASE_URI= os.environ.get('DATABASE_URL') 
@@ -52,12 +60,10 @@ def create_app(test_config=None):
     login_manager.init_app(app)
 
     # import blueprints (auth and main routes already in repo)
-    from app import auth
-    from app.routes import main, dev_routes, health
-    app.register_blueprint(auth.auth)
-    app.register_blueprint(main.main)
+    from app import routes, auth_obsolete, dev_routes
+    app.register_blueprint(auth_obsolete.auth)
+    app.register_blueprint(routes.main)
     app.register_blueprint(dev_routes.dev)
-    app.register_blueprint(health.health)
 
     # create database tables if they don't exist
     with app.app_context():
