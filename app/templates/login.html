@@ -150,6 +150,9 @@
         <div class="d-flex gap-2">
           <a href="#" class="btn btn-outline-primary">Observer</a>
           <a href="#" class="btn btn-primary">Admin</a>
+          <a href="/dev/dashboard" class="btn btn-sm btn-outline-secondary" title="Developer Dashboard (localhost only)">
+            <i class="fas fa-cogs"></i> Dev
+          </a>
         </div>
       </div>
     </div>
@@ -194,7 +197,7 @@
               <form id="loginForm" class="needs-validation" action="{{ url_for('auth.login') }}" method="post" novalidate>
 
           <!-- Election selector (optional) -->
-          <div class="mb-3">
+          <div class="mb-3" style="display: none;">
             <label for="election" class="form-label">Election</label>
             <select id="election" name="election" class="form-control">
                 <option value="" selected disabled>Select your election</option>

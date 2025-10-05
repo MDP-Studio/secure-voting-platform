@@ -3,7 +3,22 @@
 {% block content %}
 <div class="row">
     <div class="col-md-12">
-        <h2>Welcome, {{ user.username }}</h2>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2>Welcome, {{ user.username }}</h2>
+            <a href="/dev/dashboard" class="btn btn-sm btn-outline-secondary" title="Developer Dashboard (localhost only)">
+                <i class="fas fa-cogs"></i> Dev
+            </a>
+        </div>
+        
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="mb-3">
+            {% for message in messages %}
+            <div class="alert alert-info" role="alert">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
         
         {% if user.has_voted %}
             <div class="alert alert-success">

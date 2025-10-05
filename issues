@@ -1,3 +1,5 @@
+https://github.com/colinwirt/sec-soft-sys-a3/issues
+
 1. SHA-256 MAC / hash of each vote to prevent modification 
   Integrity: each vote cast shall include the polling client instance id, a serial number 
   from the polling client, timestamp, vote contents and a SHA-256 hash of all the content. 
@@ -12,7 +14,7 @@ It cannot be tampered with.
    Non-repudiation / Integrity: All edits to the CMS by AEC Delegates shall be logged with user,
    timestamp, edit details, and HMAC SHA-256 row hash, with logs reviewed by auditors within 24 hours of any change. 
 
-5. Implement WAF in Docker configuration with API request rate-limiting 
+5. Colin - Implement WAF in Docker configuration with API request rate-limiting 
 application proxy 
 apply rate-limiting, 10 requests per minute, for example 
 

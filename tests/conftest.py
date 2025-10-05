@@ -50,19 +50,22 @@ def runner(app):
 
 def _create_test_data():
     """Create test data for smoke tests."""
-    # Create test user
-    test_user = User(username='testuser', email='test@example.com')
-    test_user.set_password('testpass')
-    db.session.add(test_user)
-
-    # Create admin user
-    admin_user = User(username='admin', email='admin@example.com', is_admin=True)
-    admin_user.set_password('adminpass')
-    db.session.add(admin_user)
-
-    # Create test candidates
-    candidate1 = Candidate(name='Alice Johnson', position='Mayor')
-    candidate2 = Candidate(name='Bob Smith', position='Mayor')
-    db.session.add_all([candidate1, candidate2])
-
+    # Create admin user (matching init_db.py)
+    admin = User(username='admin', email='admin@voting.com', is_admin=True)
+    admin.set_password('admin123')
+    db.session.add(admin)
+    
+    # Create sample voter (matching init_db.py)
+    voter1 = User(username='voter1', email='voter1@email.com', is_admin=False)
+    voter1.set_password('password123')
+    db.session.add(voter1)
+    
+    # Create sample candidates (matching init_db.py)
+    candidates = [
+        Candidate(name='John Smith', party='Labor Party', position='House of Representatives', constituency='Sydney'),
+        Candidate(name='Sarah Johnson', party='Liberal Party', position='House of Representatives', constituency='Sydney'),
+        Candidate(name='Mike Brown', party='Greens', position='House of Representatives', constituency='Sydney'),
+    ]
+    db.session.add_all(candidates)
+    
     db.session.commit()

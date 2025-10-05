@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-warning">
+                <h4><i class="fas fa-exclamation-triangle"></i> Developer Dashboard</h4>
+                <p class="mb-0">This dashboard is for local development only and contains sensitive information. Never expose this in production!</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-tools"></i> Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary w-100">
+                                <i class="fas fa-tachometer-alt"></i> Main Dashboard
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="{{ url_for('main.results') }}" class="btn btn-success w-100">
+                                <i class="fas fa-chart-bar"></i> View Results
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="{{ url_for('auth.logout') }}" class="btn btn-warning w-100">
+                                <i class="fas fa-sign-out-alt"></i> Logout
+                            </a>
+                        </div>
+                        <div class="col-md-3">
+                            <button onclick="location.reload()" class="btn btn-info w-100">
+                                <i class="fas fa-sync"></i> Refresh Data
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Information -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-server"></i> System Information</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <tbody>
+                            {% for key, value in system_info.items() %}
+                            <tr>
+                                <td><strong>{{ key|replace('_', ' ')|title }}</strong></td>
+                                <td style="word-break: break-all; white-space: normal;">{{ value }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-flask"></i> Application Information</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <tbody>
+                            {% for key, value in app_info.items() %}
+                            <tr>
+                                <td><strong>{{ key|replace('_', ' ')|title }}</strong></td>
+                                <td>
+                                    {% if value is sameas true %}
+                                        <span class="badge bg-success">Yes</span>
+                                    {% elif value is sameas false %}
+                                        <span class="badge bg-danger">No</span>
+                                    {% else %}
+                                        {{ value }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Client Connection Information -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-network-wired"></i> Client Connection Information</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm">
+                        <tbody>
+                            {% for key, value in client_info.items() %}
+                            <tr>
+                                <td><strong>{{ key|replace('_', ' ')|title }}</strong></td>
+                                <td style="word-break: break-all; white-space: normal;">{{ value }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Database Information -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-database"></i> Database Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <table class="table table-sm">
+                                <tbody>
+                                    {% for key, value in db_info.items() %}
+                                    <tr>
+                                        <td><strong>{{ key|title }}</strong></td>
+                                        <td style="word-break: break-all; white-space: normal;">{{ value }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="row">
+                                <div class="col-4">
+                                    <div class="card bg-primary text-white">
+                                        <div class="card-body text-center">
+                                            <h4>{{ users|length }}</h4>
+                                            <p class="mb-0">Users</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="card bg-success text-white">
+                                        <div class="card-body text-center">
+                                            <h4>{{ candidates|length }}</h4>
+                                            <p class="mb-0">Candidates</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="card bg-info text-white">
+                                        <div class="card-body text-center">
+                                            <h4>{{ votes|length }}</h4>
+                                            <p class="mb-0">Votes</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Database Contents -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-users"></i> Users</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Username</th>
+                                    <th>Email</th>
+                                    <th>Admin</th>
+                                    <th>Voted</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr>
+                                    <td>{{ user.id }}</td>
+                                    <td>{{ user.username }}</td>
+                                    <td>{{ user.email or 'N/A' }}</td>
+                                    <td>
+                                        {% if user.is_admin %}
+                                            <span class="badge bg-danger">Yes</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">No</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if user.has_voted %}
+                                            <span class="badge bg-success">Yes</span>
+                                        {% else %}
+                                            <span class="badge bg-warning">No</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-user-tie"></i> Candidates</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Position</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for candidate in candidates %}
+                                <tr>
+                                    <td>{{ candidate.id }}</td>
+                                    <td>{{ candidate.name }}</td>
+                                    <td>{{ candidate.position }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-vote-yea"></i> Votes</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>User ID</th>
+                                    <th>Candidate ID</th>
+                                    <th>Position</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for vote in votes %}
+                                <tr>
+                                    <td>{{ vote.id }}</td>
+                                    <td>{{ vote.user_id }}</td>
+                                    <td>{{ vote.candidate_id }}</td>
+                                    <td>{{ vote.position }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs Section -->
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-globe"></i> Web Server Logs</h5>
+                </div>
+                <div class="card-body">
+                    <pre class="bg-light p-2" style="font-size: 0.8em; max-height: 300px; overflow-y: auto;">{{ web_logs }}</pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-shield-alt"></i> WAF Logs (Nginx)</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="nav nav-tabs" id="logTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="access-tab" data-bs-toggle="tab" data-bs-target="#access" type="button" role="tab">Access</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="error-tab" data-bs-toggle="tab" data-bs-target="#error" type="button" role="tab">Error</button>
+                        </li>
+                    </ul>
+                    <div class="tab-content mt-2">
+                        <div class="tab-pane fade show active" id="access" role="tabpanel">
+                            <pre class="bg-light p-2" style="font-size: 0.8em; max-height: 250px; overflow-y: auto;">{{ nginx_access_log }}</pre>
+                        </div>
+                        <div class="tab-pane fade" id="error" role="tabpanel">
+                            <pre class="bg-light p-2" style="font-size: 0.8em; max-height: 250px; overflow-y: auto;">{{ nginx_error_log }}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+<script>
+// Auto-refresh every 30 seconds
+setTimeout(function() {
+    location.reload();
+}, 30000);
+</script>
+{% endblock %}
