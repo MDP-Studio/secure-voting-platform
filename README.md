@@ -47,3 +47,7 @@
    ```
 
 **Note:** All 13 smoke tests should pass.
+
+## Updates
+
+- Prevent pushing to `main` branch directly.
