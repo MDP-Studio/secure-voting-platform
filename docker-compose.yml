@@ -10,6 +10,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - waf_logs:/var/log/nginx:ro
     networks:
       - app_net
       - db_net
@@ -22,12 +24,13 @@ services:
         tag: "{{.Name}}|{{.ImageName}}|{{.ID}}"
 
   waf:
-    image: nginx:latest
+    image: owasp/modsecurity-crs:nginx
     container_name: voting_waf
     ports:
       - "80:80"
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d/waf.conf:/etc/nginx/conf.d/waf.conf:ro
+      - waf_logs:/var/log/nginx
     depends_on:
       - web
     networks:
@@ -44,6 +47,8 @@ services:
     image: mysql:8.0
     platform: linux/amd64
     container_name: voting_db
+    ports:
+      - "33306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: rootpass
       MYSQL_DATABASE: votingdb
@@ -70,6 +75,7 @@ services:
 
 volumes:
   db_data:
+  waf_logs:
 
 networks:
   app_net:
