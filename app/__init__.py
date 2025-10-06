@@ -12,7 +12,7 @@ login_manager.login_view = 'auth.login'
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True, template_folder='templates')
 
-    # register blureprints and other stuff here
+    # register blueprints and other stuff here
     from .auth import auth as auth_blueprint
     app.register_blueprint(auth_blueprint)
     # default config
