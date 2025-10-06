@@ -1,9 +1,10 @@
 from app import create_app, db
 from app.models import User, Candidate, Vote
 
-app = create_app()
+
 
 def init_database():
+    app = create_app()
     with app.app_context():
         # Create tables
         db.create_all()
