@@ -3,7 +3,7 @@ import logging
 import geoip2.database
 
 # --- GEO-FILTERING CONFIGURATION ---
-GEOIP_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'instance', 'GeoLite2-Country.mmdb')
+GEOIP_DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'GeoLite2-Country.mmdb')
 ALLOWED_COUNTRIES = os.getenv('ALLOWED_COUNTRIES', 'AU').split(',')
 
 class GeoIPService:
