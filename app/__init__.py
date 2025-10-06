@@ -60,8 +60,7 @@ def create_app(test_config=None):
     login_manager.init_app(app)
 
     # import blueprints (auth and main routes already in repo)
-    from app import routes, auth_obsolete, dev_routes
-    app.register_blueprint(auth_obsolete.auth)
+    from app import routes, dev_routes
     app.register_blueprint(routes.main)
     app.register_blueprint(dev_routes.dev)
 
