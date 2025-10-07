@@ -70,4 +70,54 @@ def create_app(test_config=None):
         from app import models  # noqa: F401
         db.create_all()
 
+    # NOTE: older code paths may expect a Flask-Login user; we enhance request
+    # processing by checking for a JWT session_token cookie and loading the
+    # corresponding user for the request. This implements a signed, short-lived
+    # session with sliding expiration.
+    from flask import request, current_app, g
+    from flask_login import login_user
+    from app.security.jwt_helpers import decode_token, issue_token
+    from app.models import User
+
+    @app.before_request
+    def _load_user_from_jwt():
+        token = request.cookies.get('session_token')
+        if not token:
+            return None
+
+        payload = decode_token(token)
+        if not payload:
+            return None
+
+        user_id = payload.get('sub')
+        try:
+            user = User.query.get(int(user_id))
+        except Exception:
+            return None
+
+        if user:
+            login_user(user, remember=False)
+
+            # sliding expiration: refresh if less than half lifetime remains
+            import time
+            now = int(time.time())
+            iat = payload.get('iat', now)
+            exp = payload.get('exp', now)
+            lifetime = exp - iat
+            if lifetime > 0 and (exp - now) < (lifetime // 2):
+                # Defer cookie setting to a single global after_request by storing
+                # the new token on flask.g for this request.
+                g._new_session_token = issue_token(user.id)
+
+        return None
+
+    @app.after_request
+    def _maybe_set_refresh_cookie(response):
+        new_token = getattr(g, '_new_session_token', None)
+        if new_token:
+            secure = bool(int(current_app.config.get('SESSION_COOKIE_SECURE', 0)))
+            samesite = current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax')
+            response.set_cookie('session_token', new_token, httponly=True, secure=secure, samesite=samesite)
+        return response
+
     return app
