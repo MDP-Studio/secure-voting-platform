@@ -16,6 +16,7 @@ def app():
         'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
         'SECRET_KEY': 'test-secret-key',
         'WTF_CSRF_ENABLED': False,  # Disable CSRF for testing
+        'ENABLE_MFA': False,  # Disable MFA for smoke tests
     })
 
     with app.app_context():

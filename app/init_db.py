@@ -13,6 +13,10 @@ def init_database():
             admin = User(username='admin', email='secsoftsysa3@myyahoo.com', is_admin=True)
             admin.set_password('admin123')
             db.session.add(admin)
+        else:
+            # update the email to the expected email for MFA to function
+            admin = User.query.filter_by(username='admin').first()
+            admin.email = 'secsoftsysa3@myyahoo.com'
         
         # Create sample voter
         if not User.query.filter_by(username='voter1').first():
@@ -37,7 +41,7 @@ def init_database():
             db.session.add_all(candidates)
         
         db.session.commit()
-        print("Database initialized successfully!")
+        print(" 🧀✅ Database initialized successfully!")
         print("Admin credentials: username='admin', password='admin123'")
         print("Voter credentials: username='voter1', password='password123'")
 

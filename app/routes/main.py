@@ -72,6 +72,7 @@ def results():
     # Basic vote counting
     votes = Vote.query.all()
     results = {}
+    total_votes = len(votes)
     
     for vote in votes:
         candidate = Candidate.query.get(vote.candidate_id)
@@ -79,4 +80,9 @@ def results():
             results[candidate.name] = 0
         results[candidate.name] += 1
     
-    return render_template('results.html', results=results)
+    from datetime import datetime
+    return render_template('results.html', 
+                         votes=results, 
+                         total_votes=total_votes,
+                         timestamp=datetime.utcnow(),
+                         admin_user=current_user.username)

@@ -1,19 +1,8 @@
 """
-Integration Test Framework for Voting System Security Testing
+Integration test configuration and fixtures.
 
-This module provides a base HTTP test runner for integration, regression,
-and penetration testing against running Docker containers.
-
-Test Runners Comparison:
-- Cypress: Excellent for E2E browser testing, but overkill for pure API testing
-- Newman: Good for Postman collection testing, but less flexible for custom security tests
-- Python (pytest + requests): Most appropriate here because:
-  * Already used in project
-  * Excellent for API testing
-  * Flexible for security/penetration testing
-  * Easy Docker container testing
-  * Great CI/CD integration
-  * Can handle both positive and negative test cases
+This conftest.py provides fixtures for integration testing against
+running Docker containers with the WAF enabled.
 """
 
 import pytest
@@ -189,3 +178,19 @@ class HTTPTestRunner:
             'xss_possible': unescaped,
             'status_code': response.status_code
         }
+
+
+@pytest.fixture(scope="session")
+def http_runner():
+    """Pytest fixture providing HTTP test runner instance."""
+    # Use localhost (port 80) for Docker WAF setup, localhost:5000 for local Flask
+    base_url = "http://localhost"  # Docker WAF on port 80
+    return HTTPTestRunner(base_url)
+
+
+@pytest.fixture(scope="function")
+def clean_session(http_runner):
+    """Pytest fixture ensuring clean session for each test."""
+    http_runner.session.cookies.clear()
+    yield http_runner
+    http_runner.session.cookies.clear()
