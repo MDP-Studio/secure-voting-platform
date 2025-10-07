@@ -9,6 +9,7 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     email = db.Column(db.String(255), unique=True)
     password_hash = db.Column(db.String(255), nullable=False)
+   # driver_lic_no = db.Column(db.String(32), unique=True, nullable=False, index=True)
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
     has_voted = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

@@ -10,7 +10,7 @@ def init_database():
         
         # Create admin user
         if not User.query.filter_by(username='admin').first():
-            admin = User(username='admin', email='admin@voting.com', is_admin=True)
+            admin = User(username='admin', email='secsoftsysa3@myyahoo.com', is_admin=True)
             admin.set_password('admin123')
             db.session.add(admin)
         
