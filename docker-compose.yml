@@ -6,7 +6,11 @@ services:
       - "8000"
     environment:
       DATABASE_URL: mysql+pymysql://votinguser:votingpass@db:3306/votingdb
-      LOG_LEVEL: info              
+      GEO_FILTER_ENABLED: "True"
+      GEOIP_DB_PATH: /data/GeoLite2-Country.mmdb
+      LOG_LEVEL: info
+    volumes:
+      - ./data:/data
     depends_on:
       db:
         condition: service_healthy

@@ -211,19 +211,20 @@
           <!-- Voter ID (or Email) -->
           <div class="mb-3">
             <label for="voter_id" class="form-label">Voter ID or Email</label>
-            <input type="text" class="form-control" id="voter_id" name="username" placeholder="e.g., VTR-1234 or name@domain.com" required autocomplete="username" />
+            <input type="text" class="form-control" id="voter_id" name="username" value="{{ prev_username or '' }}"
+       placeholder="e.g., VTR-1234 or name@domain.com" required />
+
             <div class="invalid-feedback">Enter your Voter ID or Email.</div>
           </div>
 
-          <!-- Password / OTP field with toggle -->
+          <!-- Password  -->
           <div class="mb-2">
             <div class="d-flex justify-content-between align-items-center">
-              <label for="secret" class="form-label mb-0">Password / One‑Time Code</label>
+              <label for="secret" class="form-label mb-0">Password</label>
               <button class="btn btn-sm btn-outline-secondary" type="button" id="togglePwd"><i class="fa-regular fa-eye"></i> Show</button>
             </div>
             <div class="input-group">
-              <input type="password" class="form-control" id="secret" name="password" placeholder="Enter password or OTP" required minlength="6" autocomplete="current-password" />
-              <button class="btn btn-outline-primary" type="button" id="btnGetOtp"><i class="fa-solid fa-message"></i> Get OTP</button>
+              <input type="password" class="form-control" id="secret" name="password" placeholder="Enter password" required minlength="6" autocomplete="current-password" />
             </div>
             <div class="invalid-feedback">Please enter at least 6 characters.</div>
             <div class="form-text text-end"><a href="#" class="text-decoration-none">Forgot password?</a></div>
@@ -231,8 +232,9 @@
 
           <!-- 2FA Token (optional) -->
           <div class="mb-3">
-            <label for="totp" class="form-label">Authenticator Code <span class="text-muted">(if enabled)</span></label>
+            <label for="totp" class="form-label">Authenticator Code <span class="text-muted"></span></label>
             <input type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" class="form-control" id="totp" name="totp" placeholder="6‑digit code" autocomplete="one-time-code" />
+            <button class="btn btn-outline-primary" type="button" id="btnGetOtp"><i class="fa-solid fa-message"></i> Get OTP</button>
             <div class="invalid-feedback">Enter a valid 6‑digit code.</div>
           </div>
 
@@ -346,35 +348,39 @@
           : '<i class="fa-regular fa-eye"></i> Show';
       });
 
-      // OTP (client-side demo only). Replace with a server call to start OTP delivery.
-      btnGetOtp?.addEventListener('click', async () => {
-        btnGetOtp.disabled = true;
-        const original = btnGetOtp.innerHTML;
-        btnGetOtp.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Sending...';
-        try {
-          // Example (Django):
-          // await fetch('#', {
-          //   method: 'POST',
-          //   headers: { 'X-CSRFToken': '{{ csrf_token }}' },
-          //   body: new FormData(form)
-          // });
-          await new Promise(r => setTimeout(r, 1200));
-          btnGetOtp.classList.remove('btn-outline-primary');
-          btnGetOtp.classList.add('btn-success');
-          btnGetOtp.innerHTML = '<i class="fa-solid fa-check"></i> OTP Sent';
-        } catch (e) {
-          btnGetOtp.classList.remove('btn-outline-primary');
-          btnGetOtp.classList.add('btn-danger');
-          btnGetOtp.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Failed';
-          setTimeout(() => {
-            btnGetOtp.classList.add('btn-outline-primary');
-            btnGetOtp.classList.remove('btn-danger');
-            btnGetOtp.innerHTML = original;
-            btnGetOtp.disabled = false;
-          }, 1600);
+    // OTP: real server call
+ btnGetOtp?.addEventListener('click', async () => {
+  btnGetOtp.disabled = true;
+  const original = btnGetOtp.innerHTML;
+  btnGetOtp.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Sending...';
+  try {
+    const formData = new FormData();
+    formData.append("username", document.querySelector("#voter_id").value.trim());
+
+    const resp = await fetch("/send-otp", { method: "POST", body: formData });
+    const data = await resp.json();
+
+    if (!resp.ok || !data.success) throw new Error(data.msg || 'Send failed');
+
+    // success UI
+    btnGetOtp.classList.remove('btn-outline-primary');
+    btnGetOtp.classList.add('btn-success');
+    btnGetOtp.innerHTML = '<i class="fa-solid fa-check"></i> OTP Sent';
+    alert(data.msg || 'OTP sent');
+
+  } catch (e) {
+    btnGetOtp.classList.remove('btn-outline-primary');
+    btnGetOtp.classList.add('btn-danger');
+    btnGetOtp.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Failed';
+    setTimeout(() => {
+      btnGetOtp.classList.add('btn-outline-primary');
+      btnGetOtp.classList.remove('btn-danger');
+      btnGetOtp.innerHTML = original;
+      btnGetOtp.disabled = false;          
+    }, 1600);
           return;
-        }
-      });
+  }
+});
     });
   </script>
 </body>
