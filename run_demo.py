@@ -1,6 +1,9 @@
 from app import create_app
 from app.init_db import init_database
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 if __name__ == '__main__':

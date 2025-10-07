@@ -14,6 +14,9 @@ mail = Mail()
 
 def create_app(test_config=None):
     app = Flask(__name__, instance_relative_config=True, template_folder='templates')
+
+    # register blueprints and other stuff here
+    # default config
     app.config.from_mapping(
         SECRET_KEY=os.environ.get('SECRET_KEY', 'dev-secret'),
         SQLALCHEMY_DATABASE_URI= os.environ.get('DATABASE_URL') 
@@ -27,7 +30,10 @@ def create_app(test_config=None):
         MAIL_USE_SSL=False,
         MAIL_USERNAME=os.environ.get('MAIL_USERNAME'),
         MAIL_PASSWORD=os.environ.get('MAIL_PASSWORD'),
-        MAIL_DEFAULT_SENDER=os.environ.get('MAIL_DEFAULT_SENDER') or os.environ.get('MAIL_USERNAME'),   
+        MAIL_DEFAULT_SENDER=os.environ.get('MAIL_DEFAULT_SENDER') or os.environ.get('MAIL_USERNAME'),
+
+        # MFA settings
+        ENABLE_MFA=os.environ.get('ENABLE_MFA', 'False').lower() in ('true', '1', 'yes'),
     )
 
     if test_config:
@@ -64,6 +70,10 @@ def create_app(test_config=None):
     werkzeug_logger.setLevel(logging.INFO)
     if not any(getattr(h, 'name', None) == 'app_console' for h in werkzeug_logger.handlers):
         werkzeug_logger.addHandler(console)
+
+    # Import middleware and register geo-ip check after logging is set up
+    from .middleware import check_geo_ip
+    app.before_request(check_geo_ip)
 
     db.init_app(app)
     login_manager.init_app(app)
