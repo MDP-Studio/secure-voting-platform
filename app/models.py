@@ -30,6 +30,10 @@ class Candidate(db.Model):
 
 class Vote(db.Model):
     __tablename__ = "vote"
+    __table_args__ = (
+        # Enforce one vote per user at the database level to prevent duplicates
+        db.UniqueConstraint('user_id', name='uq_vote_user_id'),
+    )
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     candidate_id = db.Column(db.Integer, db.ForeignKey("candidate.id", ondelete="CASCADE"), nullable=False, index=True)
