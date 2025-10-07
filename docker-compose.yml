@@ -6,7 +6,7 @@ services:
       - "8000"
     environment:
       DATABASE_URL: mysql+pymysql://votinguser:votingpass@db:3306/votingdb
-      LOG_LEVEL: info              
+      LOG_LEVEL: info
     depends_on:
       db:
         condition: service_healthy
