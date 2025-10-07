@@ -5,6 +5,9 @@
 1. **Install dependencies:**
    ```bash
    pip install -r requirements.txt
+
+   # or
+   python -m pip install -r requirements.txt
    ```
 
 2. **Run the application:**
@@ -18,6 +21,18 @@
 - Admin: `admin` / `admin123`
 - Voter: `voter1` / `password123`
 
+4. **OTP mail settings**
+to set up OTP mail，please set the environment variable locally by typing the folloing command in terminal:
+Windoows:
+```
+setx MAIL_USERNAME "youraccount@gmail.com"
+setx MAIL_PASSWORD "abcd efgh ijkl mnop"
+```
+Linux:
+```
+export MAIL_USERNAME="youraccount@gmail.com"
+export MAIL_PASSWORD="abcd efgh ijkl mnop"
+```
 ## Docker Setup
 
 1. **Build and run:**

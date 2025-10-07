@@ -19,7 +19,14 @@ def init_database():
             voter1 = User(username='voter1', email='voter1@email.com', is_admin=False)
             voter1.set_password('password123')
             db.session.add(voter1)
+
+        if not User.query.filter_by(username='lix').first():
+            voter = User(username='lix', email='2508027683@qq.com', is_admin=False)
+            voter.set_password('password123')
+            db.session.add(voter)
         
+        # add your own user here
+
         # Create sample candidates
         if Candidate.query.count() == 0:
             candidates = [
