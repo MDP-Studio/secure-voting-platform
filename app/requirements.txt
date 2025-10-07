@@ -2,8 +2,11 @@ Flask
 Flask-SQLAlchemy
 Flask-Login
 Flask-WTF
+Flask-Mail
 PyMySQL
 gunicorn
 cryptography
 psutil
 geoip2
+python-dotenv
+PyJWT

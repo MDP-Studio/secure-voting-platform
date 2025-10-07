@@ -288,18 +288,26 @@
 
     <!-- Logs Section -->
     <div class="row">
-        <div class="col-md-6">
+        <div class="col-12">
             <div class="card">
-                <div class="card-header">
+                <div class="card-header d-flex justify-content-between align-items-center">
                     <h5><i class="fas fa-globe"></i> Web Server Logs</h5>
+                    <button id="refreshLogsBtn" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-sync"></i> Refresh Logs
+                    </button>
                 </div>
                 <div class="card-body">
-                    <pre class="bg-light p-2" style="font-size: 0.8em; max-height: 300px; overflow-y: auto;">{{ web_logs }}</pre>
+                    <div id="webLogsLoading" class="text-center text-muted">
+                        <i class="fas fa-spinner fa-spin"></i> Loading logs...
+                    </div>
+                    <pre id="webLogs" class="bg-light p-2" style="font-size: 0.8em; max-height: 400px; overflow-y: auto; display: none;"></pre>
                 </div>
             </div>
         </div>
+    </div>
 
-        <div class="col-md-6">
+    <div class="row mt-4">
+        <div class="col-12">
             <div class="card">
                 <div class="card-header">
                     <h5><i class="fas fa-shield-alt"></i> WAF Logs (Nginx)</h5>
@@ -315,10 +323,16 @@
                     </ul>
                     <div class="tab-content mt-2">
                         <div class="tab-pane fade show active" id="access" role="tabpanel">
-                            <pre class="bg-light p-2" style="font-size: 0.8em; max-height: 250px; overflow-y: auto;">{{ nginx_access_log }}</pre>
+                            <div id="nginxAccessLoading" class="text-center text-muted">
+                                <i class="fas fa-spinner fa-spin"></i> Loading WAF access logs...
+                            </div>
+                            <pre id="nginxAccessLog" class="bg-light p-2" style="font-size: 0.8em; max-height: 350px; overflow-y: auto; display: none;"></pre>
                         </div>
                         <div class="tab-pane fade" id="error" role="tabpanel">
-                            <pre class="bg-light p-2" style="font-size: 0.8em; max-height: 250px; overflow-y: auto;">{{ nginx_error_log }}</pre>
+                            <div id="nginxErrorLoading" class="text-center text-muted">
+                                <i class="fas fa-spinner fa-spin"></i> Loading WAF error logs...
+                            </div>
+                            <pre id="nginxErrorLog" class="bg-light p-2" style="font-size: 0.8em; max-height: 350px; overflow-y: auto; display: none;"></pre>
                         </div>
                     </div>
                 </div>
@@ -329,9 +343,78 @@
     </div>
 
 <script>
-// Auto-refresh every 30 seconds
-setTimeout(function() {
-    location.reload();
+// Function to load logs via AJAX
+function loadLogs() {
+    // Show loading indicators
+    document.getElementById('webLogsLoading').style.display = 'block';
+    document.getElementById('webLogs').style.display = 'none';
+    document.getElementById('nginxAccessLoading').style.display = 'block';
+    document.getElementById('nginxAccessLog').style.display = 'none';
+    document.getElementById('nginxErrorLoading').style.display = 'block';
+    document.getElementById('nginxErrorLog').style.display = 'none';
+
+    // Disable refresh button
+    const refreshBtn = document.getElementById('refreshLogsBtn');
+    refreshBtn.disabled = true;
+    refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+
+    fetch('/dev/logs')
+        .then(response => response.json())
+        .then(data => {
+            // Update web logs
+            document.getElementById('webLogs').textContent = data.web_logs || 'No web logs available';
+            document.getElementById('webLogsLoading').style.display = 'none';
+            document.getElementById('webLogs').style.display = 'block';
+
+            // Update WAF logs (same data for both tabs for now)
+            document.getElementById('nginxAccessLog').textContent = data.nginx_access_log || 'No WAF access logs available';
+            document.getElementById('nginxErrorLog').textContent = data.nginx_error_log || 'No WAF error logs available';
+            document.getElementById('nginxAccessLoading').style.display = 'none';
+            document.getElementById('nginxErrorLoading').style.display = 'none';
+            document.getElementById('nginxAccessLog').style.display = 'block';
+            document.getElementById('nginxErrorLog').style.display = 'block';
+
+            // Re-enable refresh button
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '<i class="fas fa-sync"></i> Refresh Logs';
+        })
+        .catch(error => {
+            console.error('Error loading logs:', error);
+            // Show error messages
+            document.getElementById('webLogs').textContent = 'Error loading web logs: ' + error.message;
+            document.getElementById('nginxAccessLog').textContent = 'Error loading WAF logs: ' + error.message;
+            document.getElementById('nginxErrorLog').textContent = 'Error loading WAF logs: ' + error.message;
+
+            // Hide loading indicators and show content
+            document.getElementById('webLogsLoading').style.display = 'none';
+            document.getElementById('webLogs').style.display = 'block';
+            document.getElementById('nginxAccessLoading').style.display = 'none';
+            document.getElementById('nginxErrorLoading').style.display = 'none';
+            document.getElementById('nginxAccessLog').style.display = 'block';
+            document.getElementById('nginxErrorLog').style.display = 'block';
+
+            // Re-enable refresh button
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '<i class="fas fa-sync"></i> Refresh Logs';
+        });
+}
+
+// Load logs when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadLogs();
+});
+
+// Refresh logs when button is clicked
+document.getElementById('refreshLogsBtn').addEventListener('click', function() {
+    loadLogs();
+});
+
+// Auto-refresh every 30 seconds (but only if not currently loading)
+setInterval(function() {
+    const refreshBtn = document.getElementById('refreshLogsBtn');
+    if (!refreshBtn.disabled) {
+        loadLogs();
+    }
 }, 30000);
 </script>
 {% endblock %}

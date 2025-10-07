@@ -46,7 +46,9 @@
    python run_tests.py
    ```
 
-**Note:** All 13 smoke tests should pass.
+**Note:** All 27 tests (13 smoke + 11 integration + 16 WAF security) should pass.
+
+📖 **Detailed testing guide:** See [`tests/README.md`](tests/README.md) for comprehensive testing documentation, including security test validation and debugging examples.
 
 ## Security Features
 
