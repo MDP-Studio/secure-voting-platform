@@ -27,7 +27,8 @@ def create_app(test_config=None):
     except OSError:
         pass
 
-    # Configure logging
+    # Configure logging (avoid adding duplicate handlers if the app is
+    # created multiple times in the same process — e.g. during tests)
     log_file = os.path.join(app.instance_path, 'app.log')
     logging.basicConfig(
         filename=log_file,
@@ -35,18 +36,29 @@ def create_app(test_config=None):
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
-    # Also log to console (stdout)
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
+    # Add a single console handler once and reuse it. We mark the handler
+    # with a private attribute so repeated create_app() calls won't add
+    # duplicate handlers (which can leak memory and duplicate log lines).
+    root_logger = logging.getLogger('')
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    console.setFormatter(formatter)
-    # Add console handler to root logger
-    logging.getLogger('').addHandler(console)
 
-    # Ensure werkzeug logs also go to our handlers
+    if not any(getattr(h, '_is_app_console', False) for h in root_logger.handlers):
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+        console.setFormatter(formatter)
+        # marker used to detect this handler later
+        setattr(console, '_is_app_console', True)
+        root_logger.addHandler(console)
+    else:
+        # reuse existing app console handler
+        console = next(h for h in root_logger.handlers if getattr(h, '_is_app_console', False))
+
+    # Ensure werkzeug logs also use our console handler, but don't add it
+    # twice if already present.
     werkzeug_logger = logging.getLogger('werkzeug')
     werkzeug_logger.setLevel(logging.INFO)
-    werkzeug_logger.addHandler(console)
+    if not any(getattr(h, '_is_app_console', False) for h in werkzeug_logger.handlers):
+        werkzeug_logger.addHandler(console)
 
     db.init_app(app)
     login_manager.init_app(app)
