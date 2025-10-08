@@ -113,7 +113,9 @@ export ENABLE_MFA="True"
 
 3. **Validate WAF Security:** 🛡️
    ```bash
-   python test_waf_demo.py
+   python ./tests/test_waf_demo.py
+
+   python ./tests/test_vote_rate_limiting.py
    ```
 
 📖 **Detailed testing guide:** See [`tests/README.md`](tests/README.md) for comprehensive testing documentation, including security test validation and debugging examples.

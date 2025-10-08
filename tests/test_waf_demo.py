@@ -24,7 +24,7 @@ USAGE:
 python test_waf_demo.py
 
 WHAT IT TESTS:
-• Normal endpoints (/, /login, /register, /healthz)
+• Normal endpoints (/, /login, /register, /health/healthz)
 • Malicious payloads (XSS scripts, SQL injection, JavaScript URLs)
 • Security comparison between direct vs WAF-protected access
 
@@ -144,8 +144,8 @@ class WAFTester:
         waf_color = Colors.GREEN if waf_result['blocked'] else Colors.RED
         waf_icon = "🛡️" if waf_result['blocked'] else "❌"
 
-        print(f"  {Colors.BLUE}Direct (port 8000):{Colors.END} Status {direct_result['status_code']} - {direct_color}{direct_icon} {direct_status}{Colors.END}")
-        print(f"  {Colors.MAGENTA}Through WAF (port 80):{Colors.END} Status {waf_result['status_code']} - {waf_color}{waf_icon} {waf_status}{Colors.END}")
+        print(f"  {Colors.BLUE}Direct (port 8000):   {Colors.END} Status {direct_result['status_code']} - {direct_color}{direct_icon}  {direct_status}  {Colors.END}")
+        print(f"  {Colors.MAGENTA}Through WAF (port 80):{Colors.END} Status {waf_result['status_code']} - {waf_color}{waf_icon}  {waf_status}  {Colors.END}")
 
         if direct_result.get('error'):
             print(f"    {Colors.RED}❌ Direct error: {direct_result['error']}{Colors.END}")
@@ -164,7 +164,7 @@ class WAFTester:
             ('/', 'Home page'),
             ('/login', 'Login page (redirects to home)'),
             ('/register', 'Registration page'),
-            ('/healthz', 'Health check')
+            ('/health/healthz', 'Health check')
         ]
 
         for endpoint, description in endpoints:
