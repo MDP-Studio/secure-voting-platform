@@ -11,7 +11,6 @@ services:
       LOG_LEVEL: info
     volumes:
       - ./data:/data
-      - waf_logs:/var/log/nginx:ro
     depends_on:
       db:
         condition: service_healthy
@@ -33,7 +32,6 @@ services:
       - "80:80"
     volumes:
       - ./nginx/conf.d/waf.conf:/etc/nginx/conf.d/waf.conf:ro
-      - waf_logs:/var/log/nginx
     depends_on:
       - web
     networks:
@@ -78,7 +76,6 @@ services:
 
 volumes:
   db_data:
-  waf_logs:
 
 networks:
   app_net:
