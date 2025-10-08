@@ -4,7 +4,7 @@
 
 QUICK LINKS:
 • Direct App:     [http://localhost:8000](http://localhost:8000)
-• WAF Protected:  [http://localhost:80](http://localhost:80)
+• WAF Protected:  [http://localhost](http://localhost)
 • README:         [README.md](README.md)
 • Test Docs:      [tests/README.md](tests/README.md)
 
@@ -15,7 +15,7 @@ OVERVIEW:
 ---------
 This tool tests two access methods:
 • Direct Flask App: [http://localhost:8000](http://localhost:8000) (no WAF protection)
-• WAF Protected:    [http://localhost:80](http://localhost:80)  (with nginx + ModSecurity)
+• WAF Protected:    [http://localhost](http://localhost)  (with nginx + ModSecurity)
 
 The demonstration shows how the WAF blocks malicious payloads while allowing legitimate traffic.
 
