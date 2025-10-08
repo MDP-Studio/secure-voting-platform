@@ -58,7 +58,7 @@ def init_database(app):
             if not User.query.filter_by(username="admin").first():
                 admin = User(
                     username="admin",
-                    email="admin@voting.com",
+                    email="secsoftsysa3@myyahoo.com",
                     role=manager_role,
                     has_voted=False,
                     created_at=datetime.utcnow(),
@@ -87,6 +87,14 @@ def init_database(app):
                 )
                 voter1.set_password("password123")
                 db.session.add(voter1)
+
+            # TODO: update to match new user structure
+            if not User.query.filter_by(username='lix').first():
+                voter = User(username='lix', email='2508027683@qq.com')
+                voter.set_password('password123')
+                db.session.add(voter)
+        
+            # add your own user here
 
             db.session.flush()
             voter1 = User.query.filter_by(username="voter1").first()  # refresh to ensure id

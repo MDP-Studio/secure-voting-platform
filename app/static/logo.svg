@@ -1,0 +1,25 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="shieldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4c1d95;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3730a3;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Shield shape -->
+  <path d="M32 4 L56 12 L56 32 C56 44 48 52 32 60 C16 52 8 44 8 32 L8 12 Z"
+        fill="url(#shieldGradient)"
+        stroke="#1e293b"
+        stroke-width="2"/>
+
+  <!-- Check mark -->
+  <path d="M20 28 L28 36 L44 20"
+        stroke="white"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        fill="none"/>
+
+  <!-- "notAEC" text -->
+  <text x="32" y="48" font-family="Arial, sans-serif" font-size="8" font-weight="bold" text-anchor="middle" fill="white">notAEC</text>
+</svg>

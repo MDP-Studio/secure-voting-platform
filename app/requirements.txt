@@ -1,8 +1,12 @@
-Flask
-Flask-SQLAlchemy
-Flask-Login
-PyMySQL
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+Flask-Login==0.6.3
+Werkzeug==2.3.7
+Flask-Mail==0.10.0
+PyMySQL==1.1.0
 gunicorn
 cryptography
+geoip2>=4.6.0
 psutil
-geoip2
+python-dotenv
+PyJWT

@@ -33,6 +33,8 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(255), unique=True)
     password_hash = db.Column(db.String(255), nullable=False)
 
+   # driver_lic_no = db.Column(db.String(32), unique=True, nullable=False, index=True)
+
     role_id = db.Column(db.Integer, db.ForeignKey("roles.id"), nullable=False)
     role = db.relationship("Role", backref=db.backref("user", lazy="dynamic"))
 
@@ -123,6 +125,10 @@ class Candidate(db.Model):
 # ---- Votes ----
 class Vote(db.Model):
     __tablename__ = "vote"
+    __table_args__ = (
+        # Enforce one vote per user at the database level to prevent duplicates
+        db.UniqueConstraint('user_id', name='uq_vote_user_id'),
+    )
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
                         nullable=False, index=True)
@@ -131,12 +137,6 @@ class Vote(db.Model):
     position = db.Column(db.String(120), nullable=False)
     vote_hash = db.Column(db.String(64))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    user = db.relationship("User", backref=db.backref("votes", lazy="dynamic"))
-
-    def __repr__(self):
-        return f"<Vote user={self.user_id} cand={self.candidate_id}>"
-
 
 @login_manager.user_loader
 def load_user(user_id):

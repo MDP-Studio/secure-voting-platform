@@ -6,7 +6,7 @@ from datetime import datetime
 import hashlib
 from functools import wraps
 from sqlalchemy import func
-
+from sqlalchemy.exc import IntegrityError
 main = Blueprint('main', __name__)
 
 # ----- tiny helpers -----
@@ -74,7 +74,7 @@ def vote():
     # only verified voters on the roll can vote
     if not user_is_eligible_to_vote(current_user):
         flash("You are not eligible to vote.")
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("main.dashboard")) # TODO: if the user can't vote they might not use the main dashboard for their login?
 
     candidate_id_raw = request.form.get("candidate_id")
     try:
@@ -99,23 +99,53 @@ def vote():
         candidate_id=candidate.id,
         position=candidate.position
     )
-    vote_data = f"{current_user.id}|{candidate.id}|{datetime.utcnow().timestamp()}"
-    v.vote_hash = hashlib.sha256(vote_data.encode()).hexdigest()
+    
+    # Create vote hash for integrity
+    vote_data = f"{current_user.id}{candidate.id}{datetime.utcnow().timestamp()}"
+    vote.vote_hash = hashlib.sha256(vote_data.encode()).hexdigest()
 
+    # Persist vote and user state in a transaction. If another concurrent
+    # request already recorded a vote for this user, the unique constraint
+    # on Vote.user_id will raise IntegrityError which we catch and handle.
     try:
+        # Mark user as voted
         current_user.has_voted = True
-        db.session.add(v)
+        db.session.add(vote)
+
+        # Mark user as voted before commit to keep app and DB in sync
         db.session.commit()
-        flash("Vote cast successfully.")
-    except Exception as e:
+    except IntegrityError:
         db.session.rollback()
-        flash("Could not record your vote. Please try again.")
-    return redirect(url_for("main.dashboard"))
+        flash('You have already voted.')
+        return redirect(url_for('main.dashboard'))
+    
+    flash('Vote cast successfully!')
+    return redirect(url_for('main.dashboard'))
 
 @main.route("/results")
 @roles_required("manager")  # managers only
 def results():
-    # aggregate with one query
+    if not current_user.is_admin:
+        flash('Access denied')
+        return redirect(url_for('main.dashboard'))
+    
+    # Basic vote counting
+    votes = Vote.query.all()
+    results = {}
+    total_votes = len(votes)
+    
+    for vote in votes:
+        candidate = Candidate.query.get(vote.candidate_id)
+        if candidate.name not in results:
+            results[candidate.name] = 0
+        results[candidate.name] += 1
+    
+    from datetime import datetime
+
+
+    # TODO: Reimpement this
+    """
+        # aggregate with one query
     rows = (
         db.session.query(
             Candidate.name.label("name"),
@@ -130,6 +160,14 @@ def results():
     # pass a simple list of dicts to the template
     results = [{"name": r.name, "position": r.position, "votes": int(r.votes or 0)} for r in rows]
     return render_template("results.html", results=results)
+    
+    """
+
+    return render_template('results.html', 
+                         votes=results, 
+                         total_votes=total_votes,
+                         timestamp=datetime.utcnow(),
+                         admin_user=current_user.username)
 
 @main.errorhandler(403)
 def forbidden(_):

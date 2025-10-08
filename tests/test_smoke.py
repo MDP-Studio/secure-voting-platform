@@ -61,7 +61,7 @@ class TestSmokeTests:
         }, follow_redirects=True)
 
         assert response.status_code == 200
-        assert b'Invalid username or password' in response.data
+        assert b'Invalid password' in response.data
 
     def test_dashboard_requires_login(self, client):
         """Test that dashboard requires authentication."""

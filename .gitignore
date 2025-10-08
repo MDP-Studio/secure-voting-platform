@@ -194,3 +194,5 @@ Thumbs.db
 .env.production
 secrets.json
 config/secrets/
+
+!/data/GeoLite2-Country.mmdb
