@@ -88,11 +88,16 @@ def init_database(app):
                 voter1.set_password("password123")
                 db.session.add(voter1)
 
-            # TODO: update to match new user structure
             if not User.query.filter_by(username='lix').first():
-                voter = User(username='lix', email='2508027683@qq.com')
-                voter.set_password('password123')
-                db.session.add(voter)
+                lix = User(
+                    username='lix',
+                    email='2508027683@qq.com',
+                    role=voter_role,
+                    has_voted=False,
+                    created_at=datetime.utcnow(),
+                )
+                lix.set_password('password123')
+                db.session.add(lix)
         
             # add your own user here
 
