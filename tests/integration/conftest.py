@@ -180,11 +180,15 @@ class HTTPTestRunner:
         }
 
 
+def pytest_addoption(parser):
+    parser.addoption("--base-url", action="store", default="http://localhost", help="Base URL for integration tests")
+
+
 @pytest.fixture(scope="session")
-def http_runner():
+def http_runner(request):
     """Pytest fixture providing HTTP test runner instance."""
     # Use localhost (port 80) for Docker WAF setup, localhost:5000 for local Flask
-    base_url = "http://localhost"  # Docker WAF on port 80
+    base_url = request.config.getoption("--base-url")
     return HTTPTestRunner(base_url)
 
 
