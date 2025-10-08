@@ -13,10 +13,10 @@
                 </tr>
             </thead>
             <tbody>
-                {% for candidate, votes in results.items() %}
+                {% for result in results %}
                 <tr>
-                    <td>{{ candidate }}</td>
-                    <td>{{ votes }}</td>
+                    <td>{{ result.name }} ({{ result.position }})</td>
+                    <td>{{ result.votes }}</td>
                 </tr>
                 {% endfor %}
             </tbody>

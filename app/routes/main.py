@@ -5,6 +5,7 @@ from app.models import User, Candidate, Vote, Region
 from datetime import datetime
 import hashlib
 from functools import wraps
+from sqlalchemy import func
 
 main = Blueprint('main', __name__)
 
@@ -65,6 +66,11 @@ def delegate_dashboard():
 @main.route('/vote', methods=['POST'])
 @login_required
 def vote():
+    # check if already voted first
+    if current_user.has_voted:
+        flash("You have already voted.")
+        return redirect(url_for("main.dashboard"))
+
     # only verified voters on the roll can vote
     if not user_is_eligible_to_vote(current_user):
         flash("You are not eligible to vote.")
@@ -85,11 +91,6 @@ def vote():
     # must vote in own region
     if current_user.enrolment.region_id != candidate.region_id:
         flash("You can only vote for candidates in your region.")
-        return redirect(url_for("main.dashboard"))
-
-    # double check one vote rule
-    if current_user.has_voted:
-        flash("You have already voted.")
         return redirect(url_for("main.dashboard"))
 
     # create vote

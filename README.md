@@ -50,3 +50,18 @@
 **Note:** All 13 smoke tests should pass.
 
 ## Updates
+
+
+## DB
+
+### Refreshing the DB
+
+To reset the database, run:
+
+```bash
+docker-compose down
+docker volume rm sec-soft-sys-a3_db_data
+docker-compose up -d
+```
+
+This will delete all existing data and start with a fresh database.

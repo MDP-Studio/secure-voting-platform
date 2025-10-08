@@ -1,8 +1,9 @@
 import pytest
 import os
 import tempfile
+from datetime import date
 from app import create_app, db
-from app.models import User, Candidate, Vote
+from app.models import User, Candidate, Vote, Role, Region, ElectoralRoll
 
 
 @pytest.fixture
@@ -50,21 +51,53 @@ def runner(app):
 
 def _create_test_data():
     """Create test data for smoke tests."""
+    # Create roles
+    voter_role = Role(name='voter', description='Regular voter')
+    delegate_role = Role(name='delegate', description='Delegate user')
+    manager_role = Role(name='manager', description='Manager/admin user')
+    db.session.add_all([voter_role, delegate_role, manager_role])
+    db.session.commit()
+    
+    # Create sample region
+    default_region = Region(name='Sydney')
+    db.session.add(default_region)
+    db.session.commit()
+    
     # Create admin user (matching init_db.py)
-    admin = User(username='admin', email='admin@voting.com', is_manager=True)
+    admin = User(username='admin', email='admin@voting.com')
+    admin.role_id = manager_role.id
     admin.set_password('admin123')
     db.session.add(admin)
     
     # Create sample voter (matching init_db.py)
-    voter1 = User(username='voter1', email='voter1@email.com', is_manager=False)
+    voter1 = User(username='voter1', email='voter1@email.com')
+    voter1.role_id = voter_role.id
     voter1.set_password('password123')
     db.session.add(voter1)
+    db.session.commit()  # Commit to get user.id
+    
+    # Create enrolment for voter1
+    enrolment = ElectoralRoll(
+        roll_number='TEST001',
+        driver_license_number='DL123456',
+        full_name='Test Voter',
+        date_of_birth=date(1990, 1, 1),
+        address_line1='123 Test St',
+        suburb='Test Suburb',
+        state='NSW',
+        postcode='2000',
+        region=default_region,
+        status='active',
+        verified=True,
+        user=voter1
+    )
+    db.session.add(enrolment)
     
     # Create sample candidates (matching init_db.py)
     candidates = [
-        Candidate(name='John Smith', party='Labor Party', position='House of Representatives', constituency='Sydney'),
-        Candidate(name='Sarah Johnson', party='Liberal Party', position='House of Representatives', constituency='Sydney'),
-        Candidate(name='Mike Brown', party='Greens', position='House of Representatives', constituency='Sydney'),
+        Candidate(name='John Smith', party='Labor Party', position='House of Representatives', region=default_region),
+        Candidate(name='Sarah Johnson', party='Liberal Party', position='House of Representatives', region=default_region),
+        Candidate(name='Mike Brown', party='Greens', position='House of Representatives', region=default_region),
     ]
     db.session.add_all(candidates)
     

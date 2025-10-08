@@ -101,8 +101,8 @@ class TestSmokeTests:
         }, follow_redirects=True)
 
         assert response.status_code == 200
-        # Should show "Vote cast successfully!" on dashboard after voting
-        assert b'Vote cast successfully!' in response.data
+        # Should show "Vote cast successfully" on dashboard after voting
+        assert b'Vote cast successfully' in response.data
 
         # Verify vote was recorded
         with client.application.app_context():
@@ -174,7 +174,7 @@ class TestSmokeTests:
         response = client.post('/vote', data={'candidate_id': candidate.id}, follow_redirects=True)
         assert response.status_code == 200
         # Should show error message since user has already voted
-        assert b'You have already voted!' in response.data
+        assert b'You have already voted' in response.data
 
     @pytest.mark.skip(reason="In test mode, the remote_addr check might not work the same way")
     def test_developer_dashboard_denied_from_remote(self, client):
