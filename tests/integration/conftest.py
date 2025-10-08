@@ -9,8 +9,29 @@ import pytest
 import requests
 import json
 import time
+import logging
+import os
 from typing import Dict, Any, Optional
 from urllib.parse import urljoin
+
+
+# Configure logging to write to tests.log file
+def pytest_configure(config):
+    """Configure pytest logging to write to file."""
+    # Create logs directory if it doesn't exist
+    log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            logging.FileHandler(os.path.join(log_dir, 'tests.log'), mode='a'),
+            logging.StreamHandler()  # Keep console output too
+        ]
+    )
 
 
 class HTTPTestRunner:
@@ -152,12 +173,29 @@ class HTTPTestRunner:
             'ORA-', 'SQLSTATE', 'syntax error'
         ]
 
-        has_error = any(pattern in response.text.lower() for pattern in error_patterns)
+        # Find which specific error patterns were detected
+        detected_errors = []
+        response_text_lower = response.text.lower()
+        for pattern in error_patterns:
+            if pattern in response_text_lower:
+                detected_errors.append(pattern)
+
+        has_error = len(detected_errors) > 0
+
+        # Log the specific error patterns found
+        if has_error:
+            logging.info(f"SQL error patterns detected in response for payload '{payload}': {detected_errors}")
+            # Log the actual response content for verification
+            logging.info(f"Response content (first 500 chars): {response.text[:500]}")
+            if len(response.text) > 500:
+                logging.info(f"... (response truncated, total length: {len(response.text)})")
 
         return {
             'payload': payload,
             'sql_error_detected': has_error,
-            'status_code': response.status_code
+            'detected_errors': detected_errors,
+            'status_code': response.status_code,
+            'response_content': response.text  # Include full response for debugging
         }
 
     def test_xss_vulnerability(self, payload: str) -> Dict[str, Any]:
@@ -173,10 +211,30 @@ class HTTPTestRunner:
         # Check if payload appears unescaped in response
         unescaped = payload in response.text
 
+        # Find where the payload appears in the response for debugging
+        payload_locations = []
+        if unescaped:
+            # Look for script tags, event handlers, etc.
+            dangerous_patterns = ['<script', 'javascript:', 'onload=', 'onerror=', 'onclick=']
+            for pattern in dangerous_patterns:
+                if pattern in response.text.lower():
+                    payload_locations.append(pattern)
+
+        if unescaped:
+            logging.info(f"XSS payload appears unescaped in response for payload: {payload}")
+            if payload_locations:
+                logging.info(f"Dangerous patterns found: {payload_locations}")
+            # Log the actual response content for verification
+            logging.info(f"Response content (first 500 chars): {response.text[:500]}")
+            if len(response.text) > 500:
+                logging.info(f"... (response truncated, total length: {len(response.text)})")
+
         return {
             'payload': payload,
             'xss_possible': unescaped,
-            'status_code': response.status_code
+            'dangerous_patterns': payload_locations,
+            'status_code': response.status_code,
+            'response_content': response.text  # Include full response for debugging
         }
 
 

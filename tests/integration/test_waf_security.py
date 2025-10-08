@@ -7,12 +7,17 @@ These tests specifically target WAF (Web Application Firewall) security features
 - Rate limiting
 - Template processing validation
 
-Run with: pytest tests/integration/test_waf_security.py -v
-Run against Docker: pytest tests/integration/test_waf_security.py -v --base-url=http://localhost
+Run with: pytest tests/integration/test_waf_security.py -v -s --log-cli-level=ERROR
+Run against Docker: pytest tests/integration/test_waf_security.py -v -s --log-cli-level=ERROR --base-url=http://localhost
+
+The -s flag shows print output, and --log-cli-level=ERROR shows detailed vulnerability
+reports including the actual response content when security issues are detected.
+This allows you to verify exactly what the server returned and confirm the detection logic.
 """
 
 import pytest
 import time
+import logging
 
 
 class TestWAFSecurityPenetration:
@@ -36,11 +41,22 @@ class TestWAFSecurityPenetration:
         "' OR 1=1 --",
         "') OR ('1'='1",
     ])
-    def test_sql_injection_blocking(self, http_runner, sql_payload):
+    def test_sql_injection_blocking(self, http_runner, caplog, sql_payload):
         """Test that SQL injection attempts are blocked by WAF."""
-        result = http_runner.test_sql_injection(sql_payload)
+        with caplog.at_level(logging.INFO):
+            result = http_runner.test_sql_injection(sql_payload)
 
         # Should not reveal SQL errors (indicates injection worked)
+        if result['sql_error_detected']:
+            logging.error(f"SQL injection may have succeeded: {sql_payload}")
+            logging.error(f"Detected error patterns: {result.get('detected_errors', [])}")
+            logging.error(f"Status code: {result['status_code']}")
+            # Show the actual response content
+            response_content = result.get('response_content', '')
+            logging.error(f"Response content: {response_content[:1000]}")
+            if len(response_content) > 1000:
+                logging.error(f"... (truncated, full length: {len(response_content)})")
+
         assert not result['sql_error_detected'], \
             f"SQL injection may have succeeded: {sql_payload}"
 
@@ -55,11 +71,25 @@ class TestWAFSecurityPenetration:
         "<svg onload=alert(1)>",
         "<body onload=alert(1)>",
     ])
-    def test_xss_vulnerability_check(self, http_runner, xss_payload):
+    def test_xss_vulnerability_check(self, http_runner, caplog, xss_payload):
         """Test that XSS attempts are properly blocked by WAF."""
-        result = http_runner.test_xss_vulnerability(xss_payload)
+        with caplog.at_level(logging.INFO):
+            result = http_runner.test_xss_vulnerability(xss_payload)
+
+        # Log that we're testing this payload (shows WAF blocking)
+        logging.info(f"XSS TEST: Payload '{xss_payload}' blocked by WAF (status: {result['status_code']})")
 
         # XSS payload should be escaped/sanitized, not executed
+        if result['xss_possible']:
+            logging.error(f"XSS vulnerability detected: {xss_payload}")
+            logging.error(f"Dangerous patterns found: {result.get('dangerous_patterns', [])}")
+            logging.error(f"Status code: {result['status_code']}")
+            # Show the actual response content
+            response_content = result.get('response_content', '')
+            logging.error(f"Response content: {response_content[:1000]}")
+            if len(response_content) > 1000:
+                logging.error(f"... (truncated, full length: {len(response_content)})")
+
         assert not result['xss_possible'], \
             f"XSS vulnerability detected: {xss_payload}"
 

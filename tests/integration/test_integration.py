@@ -44,6 +44,16 @@ class TestHealthChecks:
         response = http_runner.get('/static/logo.svg')
         assert response.status_code == 200, "Logo not accessible"
 
+    def test_registration_page_loads(self, http_runner):
+        """Test registration page loads correctly."""
+        response = http_runner.get('/register')
+
+        assert response.status_code == 200
+        assert 'register' in response.text.lower()
+        assert 'username' in response.text.lower()
+        assert 'email' in response.text.lower()
+        assert 'password' in response.text.lower()
+
 
 class TestAuthentication:
     """Test authentication flows and security."""
@@ -69,6 +79,13 @@ class TestAuthentication:
         """Test successful voter login."""
         success = clean_session.login('voter1', 'password123')
         assert success, "Voter login failed"
+
+        assert clean_session.is_authenticated(), "Not authenticated after login"
+
+    def test_successful_delegate_login(self, clean_session):
+        """Test successful delegate login."""
+        success = clean_session.login('delegate1', 'delegate123')
+        assert success, "Delegate login failed"
 
         assert clean_session.is_authenticated(), "Not authenticated after login"
 
@@ -123,7 +140,98 @@ class TestAPIFunctionality:
 
         clean_session.logout()
 
+        # Test with delegate account
+        clean_session.login('delegate1', 'delegate123')
+        response = clean_session.session.get(clean_session.base_url + '/results', allow_redirects=False)
+        assert response.status_code == 302, "Delegate should not access results"
+
+        clean_session.logout()
+
         # Test with admin account
         clean_session.login('admin', 'admin123')
         response = clean_session.get('/results')
         assert response.status_code == 200, "Admin should access results"
+
+    def test_delegate_dashboard_access(self, clean_session):
+        """Test delegate can access delegate dashboard."""
+        clean_session.login('delegate1', 'delegate123')
+
+        response = clean_session.get('/delegate')
+        assert response.status_code == 200, "Delegate should access delegate dashboard"
+        assert 'delegate' in response.text.lower()
+
+    def test_voter_cannot_access_delegate_dashboard(self, clean_session):
+        """Test voter cannot access delegate dashboard."""
+        clean_session.login('voter1', 'password123')
+
+        response = clean_session.session.get(clean_session.base_url + '/delegate', allow_redirects=False)
+        assert response.status_code == 302, "Voter should not access delegate dashboard"
+
+    def test_voter_can_access_own_dashboard(self, clean_session):
+        """Test voter can access their own dashboard."""
+        clean_session.login('voter1', 'password123')
+
+        response = clean_session.get('/dashboard')
+        assert response.status_code == 200, "Voter should access dashboard"
+        assert 'welcome' in response.text.lower()
+
+    def test_delegate_can_access_own_dashboard(self, clean_session):
+        """Test delegate can access their own dashboard."""
+        clean_session.login('delegate1', 'delegate123')
+
+        response = clean_session.get('/dashboard')
+        assert response.status_code == 200, "Delegate should access dashboard"
+        assert 'welcome' in response.text.lower()
+
+    def test_admin_can_access_own_dashboard(self, clean_session):
+        """Test admin can access their own dashboard."""
+        clean_session.login('admin', 'admin123')
+
+        response = clean_session.get('/dashboard')
+        assert response.status_code == 200, "Admin should access dashboard"
+        assert 'welcome' in response.text.lower()
+
+    def test_delegate_cannot_vote(self, clean_session):
+        """Test delegate cannot vote (only voters can)."""
+        clean_session.login('delegate1', 'delegate123')
+
+        # Try to vote (assuming candidate_id=1 exists)
+        response = clean_session.post('/vote', data={'candidate_id': 1})
+        # Should redirect to dashboard with flash message
+        assert response.status_code == 302, "Delegate should be redirected when trying to vote"
+        assert 'dashboard' in response.headers.get('Location', '')
+
+    def test_admin_cannot_vote(self, clean_session):
+        """Test admin cannot vote (only voters can)."""
+        clean_session.login('admin', 'admin123')
+
+        # Try to vote
+        response = clean_session.post('/vote', data={'candidate_id': 1})
+        # Should redirect to dashboard
+        assert response.status_code == 302, "Admin should be redirected when trying to vote"
+        assert 'dashboard' in response.headers.get('Location', '')
+
+    def test_voter_can_vote(self, clean_session):
+        """Test voter can cast a vote."""
+        clean_session.login('voter1', 'password123')
+
+        # Try to vote
+        response = clean_session.post('/vote', data={'candidate_id': 1})
+        # Should succeed or redirect with success
+        assert response.status_code in [200, 302], "Voter should be able to vote"
+
+    def test_delegate_can_create_candidate(self, clean_session):
+        """Test delegate can create a candidate."""
+        clean_session.login('delegate1', 'delegate123')
+
+        # Try to create a candidate
+        candidate_data = {
+            'name': 'Test Candidate',
+            'party': 'Test Party',
+            'position': 'Test Position',
+            'region_id': 1
+        }
+        response = clean_session.post('/candidates/new', data=candidate_data)
+        # Should redirect to delegate dashboard on success
+        assert response.status_code == 302, "Delegate should be able to create candidate"
+        assert 'delegate' in response.headers.get('Location', '')
