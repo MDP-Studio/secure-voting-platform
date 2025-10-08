@@ -11,6 +11,7 @@ services:
       LOG_LEVEL: info
     volumes:
       - ./data:/data
+      - ./instance:/app/instance
     depends_on:
       db:
         condition: service_healthy
