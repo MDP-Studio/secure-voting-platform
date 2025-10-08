@@ -60,7 +60,7 @@ Final election results shall be digitally signed with the Election Commission’
 Any recipient can verify authenticity using the Commission’s public key. 
 
 
-12. Secure Session Management 
+12. Secure Session Management (zayn)
 All user sessions (voter and staff) shall use signed, short-lived tokens (e.g., JWT). 
 Sessions must automatically expire after 15 minutes of inactivity to prevent misuse. 
 

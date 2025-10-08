@@ -5,6 +5,10 @@ from app import create_app, db
 from app.models import User, Candidate, Vote
 
 
+def pytest_addoption(parser):
+    parser.addoption("--base-url", action="store", default="http://localhost", help="Base URL for integration tests")
+
+
 @pytest.fixture
 def app():
     """Create and configure a test app instance."""
@@ -16,6 +20,7 @@ def app():
         'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
         'SECRET_KEY': 'test-secret-key',
         'WTF_CSRF_ENABLED': False,  # Disable CSRF for testing
+        'ENABLE_MFA': False,  # Disable MFA for testing
     })
 
     with app.app_context():

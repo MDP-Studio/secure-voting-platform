@@ -9,6 +9,7 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     email = db.Column(db.String(255), unique=True)
     password_hash = db.Column(db.String(255), nullable=False)
+   # driver_lic_no = db.Column(db.String(32), unique=True, nullable=False, index=True)
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
     has_voted = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -30,12 +31,18 @@ class Candidate(db.Model):
 
 class Vote(db.Model):
     __tablename__ = "vote"
+    __table_args__ = (
+        # Enforce one vote per user at the database level to prevent duplicates
+        db.UniqueConstraint('user_id', name='uq_vote_user_id'),
+    )
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     candidate_id = db.Column(db.Integer, db.ForeignKey("candidate.id", ondelete="CASCADE"), nullable=False, index=True)
     position = db.Column(db.String(120), nullable=False)
     vote_hash = db.Column(db.String(64))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Note: additional constraints should be added above in the single __table_args__ block
 
 @login_manager.user_loader
 def load_user(user_id):

@@ -3,7 +3,7 @@ Developer routes for debugging and monitoring.
 This file contains development-only routes that should NEVER be enabled in production.
 """
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template, request, jsonify
 from app import db
 from app.models import User, Candidate, Vote
 from app.security import get_client_ip, is_ip_allowed
@@ -13,6 +13,7 @@ import psutil
 import socket
 from flask import current_app
 from datetime import datetime
+import subprocess
 
 dev = Blueprint('dev', __name__, url_prefix='/dev')
 
@@ -56,7 +57,7 @@ def dev_dashboard():
         'secret_key_configured': bool(current_app.config.get('SECRET_KEY')),
     }
 
-    # Read log files (last 50 lines each)
+    # Read log files (last 50 lines each) - DEPRECATED: Now loaded via AJAX
     def read_last_lines(filepath, lines=50):
         if not os.path.exists(filepath):
             return f"File not found: {filepath}"
@@ -67,11 +68,11 @@ def dev_dashboard():
         except Exception as e:
             return f"Error reading file: {e}"
 
-    # Web server logs (Flask logs)
+    # Web server logs (Flask logs) - DEPRECATED: Now loaded via AJAX
     log_file = os.path.join(current_app.instance_path, 'app.log')
     web_logs = read_last_lines(log_file)
 
-    # WAF logs (nginx access/error logs)
+    # WAF logs (nginx access/error logs) - DEPRECATED: Now loaded via AJAX
     # Note: nginx logs are in the nginx container. Use 'docker-compose logs waf' to view them
     nginx_access_log = "WAF access logs available via: docker-compose logs waf"
     nginx_error_log = "WAF error logs available via: docker-compose logs waf"
@@ -119,7 +120,62 @@ def dev_dashboard():
                          system_info=system_info,
                          app_info=app_info,
                          client_info=client_info,
-                         web_logs=web_logs,
-                         nginx_access_log=nginx_access_log,
-                         nginx_error_log=nginx_error_log,
                          db_info=db_info)
+
+
+@dev.route('/logs')
+def get_logs():
+    """API endpoint to get logs via AJAX - LOCAL DEVELOPMENT ONLY"""
+    # Get real client IP (handle proxy/load balancer)
+    client_ip = get_client_ip(request)
+
+    # For development, also allow requests from nginx container network
+    allowed_ips = ['127.0.0.1', '::1', '172.16.0.0/12']
+
+    # Check if client IP is allowed (supports both individual IPs and CIDR subnets)
+    if not is_ip_allowed(client_ip, allowed_ips):
+        return jsonify({'error': 'Access denied'}), 403
+
+    # Read log files (last 100 lines each)
+    def read_last_lines(filepath, lines=100):
+        if not os.path.exists(filepath):
+            return f"File not found: {filepath}"
+        try:
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.readlines()
+                return ''.join(content[-lines:])
+        except Exception as e:
+            return f"Error reading file: {e}"
+
+    # Web server logs (Flask logs)
+    log_file = os.path.join(current_app.instance_path, 'app.log')
+    web_logs = read_last_lines(log_file)
+
+    # WAF logs from Docker containers
+    def get_docker_logs(container_name, tail=100):
+        try:
+            result = subprocess.run(
+                ['docker-compose', 'logs', '--tail', str(tail), container_name],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                return result.stdout
+            else:
+                return f"Error getting logs from {container_name}: {result.stderr}"
+        except subprocess.TimeoutExpired:
+            return f"Timeout getting logs from {container_name}"
+        except FileNotFoundError:
+            return f"docker-compose command not found. Make sure Docker is running."
+        except Exception as e:
+            return f"Error getting logs from {container_name}: {e}"
+
+    nginx_access_log = get_docker_logs('waf')
+    nginx_error_log = get_docker_logs('waf')  # Same container, but we can differentiate if needed
+
+    return jsonify({
+        'web_logs': web_logs,
+        'nginx_access_log': nginx_access_log,
+        'nginx_error_log': nginx_error_log
+    })

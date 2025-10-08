@@ -37,15 +37,15 @@ def send_otp():
 
     # Prepare email message
     msg = Message(
-        subject="CivicVote OTP Verification",
+        subject="notAEC OTP Verification",
         recipients=[user.email],  # recipients must be a list
     )
     msg.body = (
         f"Dear {user.username},\n\n"
         f"Your One-Time Password (OTP) is: {code}\n\n"
-        "Please enter this code on the CivicVote login page to continue.\n"
+        "Please enter this code on the notAEC login page to continue.\n"
         "⚠️ This code will expire in 5 minutes. Do not share it with anyone.\n\n"
-        "Best regards,\nCivicVote Security Team"
+        "Best regards,\nnotAEC Security Team"
     )
 
     # Send email
