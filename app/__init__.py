@@ -63,11 +63,13 @@ def create_app(test_config=None):
 
     # import blueprints (auth and main routes already in repo)
     from app import auth
-    from app.routes import main, dev_routes, health
+    from app.routes import main, dev_routes, health, candidates, registration
     app.register_blueprint(auth.auth)
     app.register_blueprint(main.main)
     app.register_blueprint(dev_routes.dev)
     app.register_blueprint(health.health)
+    app.register_blueprint(candidates.candidates)
+    app.register_blueprint(registration.registration)
 
     # create database tables if they don't exist
     with app.app_context():
