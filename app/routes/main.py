@@ -102,7 +102,7 @@ def vote():
     
     # Create vote hash for integrity
     vote_data = f"{current_user.id}{candidate.id}{datetime.utcnow().timestamp()}"
-    vote.vote_hash = hashlib.sha256(vote_data.encode()).hexdigest()
+    v.vote_hash = hashlib.sha256(vote_data.encode()).hexdigest()
 
     # Persist vote and user state in a transaction. If another concurrent
     # request already recorded a vote for this user, the unique constraint
@@ -110,7 +110,7 @@ def vote():
     try:
         # Mark user as voted
         current_user.has_voted = True
-        db.session.add(vote)
+        db.session.add(v)
 
         # Mark user as voted before commit to keep app and DB in sync
         db.session.commit()
@@ -125,7 +125,7 @@ def vote():
 @main.route("/results")
 @roles_required("manager")  # managers only
 def results():
-    if not current_user.is_admin:
+    if not current_user.is_manager:
         flash('Access denied')
         return redirect(url_for('main.dashboard'))
     
