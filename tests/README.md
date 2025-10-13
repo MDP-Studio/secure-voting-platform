@@ -34,7 +34,9 @@ Comprehensive tests covering:
 
 **Run integration tests:**
 ```bash
-# With Docker containers running
+# With Docker containers
+docker-compose up -d
+# docker-compose up -d --build # (rebuild containers if needed)
 python -m pytest tests/integration/test_integration.py -v --base-url=http://localhost
 
 # With local Flask app
@@ -52,6 +54,8 @@ Advanced security testing with real OWASP ModSecurity CRS:
 **Run WAF security tests:**
 ```bash
 # Requires Docker setup with WAF
+docker-compose up -d
+# docker-compose up -d --build # (rebuild containers if needed)
 python -m pytest tests/integration/test_waf_security.py -v --base-url=http://localhost
 ```
 

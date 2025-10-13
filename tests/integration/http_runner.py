@@ -20,6 +20,7 @@ import pytest
 import requests
 import json
 import time
+import logging
 from typing import Dict, Any, Optional
 from urllib.parse import urljoin
 
@@ -163,12 +164,29 @@ class HTTPTestRunner:
             'ORA-', 'SQLSTATE', 'syntax error'
         ]
 
-        has_error = any(pattern in response.text.lower() for pattern in error_patterns)
+        # Find which specific error patterns were detected
+        detected_errors = []
+        response_text_lower = response.text.lower()
+        for pattern in error_patterns:
+            if pattern in response_text_lower:
+                detected_errors.append(pattern)
+
+        has_error = len(detected_errors) > 0
+
+        # Log the specific error patterns found
+        if has_error:
+            logging.info(f"SQL error patterns detected in response for payload '{payload}': {detected_errors}")
+            # Log the actual response content for verification
+            logging.info(f"Response content (first 500 chars): {response.text[:500]}")
+            if len(response.text) > 500:
+                logging.info(f"... (response truncated, total length: {len(response.text)})")
 
         return {
             'payload': payload,
             'sql_error_detected': has_error,
-            'status_code': response.status_code
+            'detected_errors': detected_errors,
+            'status_code': response.status_code,
+            'response_content': response.text  # Include full response for debugging
         }
 
     def test_xss_vulnerability(self, payload: str) -> Dict[str, Any]:
@@ -181,11 +199,40 @@ class HTTPTestRunner:
 
         response = self.post('/login', data=test_data)
 
-        # Check if payload appears unescaped in response
-        unescaped = payload in response.text
+        # Check if request was blocked by WAF (403 status)
+        waf_blocked = response.status_code == 403
+
+        # Check if payload appears unescaped in response (only if not blocked)
+        unescaped = False
+        if not waf_blocked:
+            unescaped = payload in response.text
+
+        # Find where the payload appears in the response for debugging
+        payload_locations = []
+        if unescaped:
+            # Look for script tags, event handlers, etc.
+            dangerous_patterns = ['<script', 'javascript:', 'onload=', 'onerror=', 'onclick=']
+            for pattern in dangerous_patterns:
+                if pattern in response.text.lower():
+                    payload_locations.append(pattern)
+
+        # Log WAF blocking or vulnerability detection
+        if waf_blocked:
+            logging.info(f"XSS attempt blocked by WAF: {payload} (403 Forbidden)")
+        elif unescaped:
+            logging.warning(f"XSS payload appears unescaped in response for payload: {payload}")
+            if payload_locations:
+                logging.warning(f"Dangerous patterns found: {payload_locations}")
+            # Log the actual response content for verification
+            logging.warning(f"Response content (first 500 chars): {response.text[:500]}")
+            if len(response.text) > 500:
+                logging.warning(f"... (response truncated, total length: {len(response.text)})")
 
         return {
             'payload': payload,
             'xss_possible': unescaped,
-            'status_code': response.status_code
+            'waf_blocked': waf_blocked,
+            'dangerous_patterns': payload_locations,
+            'status_code': response.status_code,
+            'response_content': response.text  # Include full response for debugging
         }

@@ -2,6 +2,13 @@ services:
   web:
     build: ./app
     container_name: voting_web
+    ports:
+      # 8000 is mapped for direct access (bypass WAF)
+      # This would be disabled unless penetration testing of the bare app is being performed
+      # - bare testing should be done in a separate isolated environment (like this project)
+      # - in production this port would be closed to external access
+      # - only the WAF port (80) would be exposed externally
+      - "8000:8000" 
     expose:
       - "8000"
     environment:

@@ -9,8 +9,29 @@ import pytest
 import requests
 import json
 import time
+import logging
+import os
 from typing import Dict, Any, Optional
 from urllib.parse import urljoin
+
+
+# Configure logging to write to tests.log file
+def pytest_configure(config):
+    """Configure pytest logging to write to file."""
+    # Create logs directory if it doesn't exist
+    log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        handlers=[
+            logging.FileHandler(os.path.join(log_dir, 'tests.log'), mode='a'),
+            logging.StreamHandler()  # Keep console output too
+        ]
+    )
 
 
 class HTTPTestRunner:
@@ -27,7 +48,6 @@ class HTTPTestRunner:
     def __init__(self, base_url: str = "http://localhost:5000"):
         self.base_url = base_url.rstrip('/')
         self.session = requests.Session()
-        self.session.timeout = 10  # 10 second timeout
 
         # Rate limiting protection - add delay between requests
         self.last_request_time = 0
@@ -74,11 +94,15 @@ class HTTPTestRunner:
 
         response = self.post('/login', data=login_data, allow_redirects=False)
 
-        # Success: 302 redirect to dashboard
+        # Success: 302 redirect to appropriate dashboard based on role
+        # - voters: /dashboard
+        # - delegates: /delegate  
+        # - managers: /dev/dashboard
         # Failure: 200 with login form shown again
         if response.status_code == 302:
             location = response.headers.get('Location', '')
-            return 'dashboard' in location.lower()
+            # Accept any dashboard redirect as success
+            return any(dashboard in location for dashboard in ['/dashboard', '/delegate', '/dev/dashboard'])
         elif response.status_code == 200:
             # Check if we're still on login page (failed login)
             return 'login' not in response.text.lower()
@@ -152,12 +176,29 @@ class HTTPTestRunner:
             'ORA-', 'SQLSTATE', 'syntax error'
         ]
 
-        has_error = any(pattern in response.text.lower() for pattern in error_patterns)
+        # Find which specific error patterns were detected
+        detected_errors = []
+        response_text_lower = response.text.lower()
+        for pattern in error_patterns:
+            if pattern in response_text_lower:
+                detected_errors.append(pattern)
+
+        has_error = len(detected_errors) > 0
+
+        # Log the specific error patterns found
+        if has_error:
+            logging.info(f"SQL error patterns detected in response for payload '{payload}': {detected_errors}")
+            # Log the actual response content for verification
+            logging.info(f"Response content (first 500 chars): {response.text[:500]}")
+            if len(response.text) > 500:
+                logging.info(f"... (response truncated, total length: {len(response.text)})")
 
         return {
             'payload': payload,
             'sql_error_detected': has_error,
-            'status_code': response.status_code
+            'detected_errors': detected_errors,
+            'status_code': response.status_code,
+            'response_content': response.text  # Include full response for debugging
         }
 
     def test_xss_vulnerability(self, payload: str) -> Dict[str, Any]:
@@ -173,10 +214,30 @@ class HTTPTestRunner:
         # Check if payload appears unescaped in response
         unescaped = payload in response.text
 
+        # Find where the payload appears in the response for debugging
+        payload_locations = []
+        if unescaped:
+            # Look for script tags, event handlers, etc.
+            dangerous_patterns = ['<script', 'javascript:', 'onload=', 'onerror=', 'onclick=']
+            for pattern in dangerous_patterns:
+                if pattern in response.text.lower():
+                    payload_locations.append(pattern)
+
+        if unescaped:
+            logging.info(f"XSS payload appears unescaped in response for payload: {payload}")
+            if payload_locations:
+                logging.info(f"Dangerous patterns found: {payload_locations}")
+            # Log the actual response content for verification
+            logging.info(f"Response content (first 500 chars): {response.text[:500]}")
+            if len(response.text) > 500:
+                logging.info(f"... (response truncated, total length: {len(response.text)})")
+
         return {
             'payload': payload,
             'xss_possible': unescaped,
-            'status_code': response.status_code
+            'dangerous_patterns': payload_locations,
+            'status_code': response.status_code,
+            'response_content': response.text  # Include full response for debugging
         }
 
 
@@ -193,4 +254,62 @@ def clean_session(http_runner):
     """Pytest fixture ensuring clean session for each test."""
     http_runner.session.cookies.clear()
     yield http_runner
+    http_runner.session.cookies.clear()
+
+
+@pytest.fixture(scope="function")
+def clean_session_with_retry(http_runner):
+    """Pytest fixture with automatic retry on rate limiting."""
+    http_runner.session.cookies.clear()
+    # Add test mode header to relax rate limiting
+    http_runner.session.headers.update({'X-Test-Mode': '1'})
+    yield http_runner
+    http_runner.session.cookies.clear()
+
+
+@pytest.fixture(scope="function")
+def direct_app_session():
+    """Pytest fixture that bypasses WAF entirely for direct app testing."""
+    runner = HTTPTestRunner("http://localhost:8000")
+    runner.session.cookies.clear()
+    yield runner
+    runner.session.cookies.clear()
+
+
+@pytest.fixture(scope="function")
+def rate_limit_aware_session(http_runner):
+    """Pytest fixture that handles rate limiting gracefully."""
+    http_runner.session.cookies.clear()
+    # Store original post method
+    original_post = http_runner.post
+
+    def rate_limit_resilient_post(path, data=None, json=None, **kwargs):
+        """Post method that retries on rate limiting."""
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = original_post(path, data=data, json=json, **kwargs)
+                if response.status_code == 503:
+                    # Check if it's rate limiting (nginx returns 503 for rate limits)
+                    if attempt < max_retries - 1:
+                        import time
+                        wait_time = 2 ** attempt  # Exponential backoff
+                        print(f"Rate limited (attempt {attempt + 1}), waiting {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        # On final attempt, consider rate limiting as expected behavior
+                        print(f"Rate limiting detected after {max_retries} attempts - this may be expected security behavior")
+                        return response
+                return response
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                continue
+
+    # Monkey patch the post method
+    http_runner.post = rate_limit_resilient_post
+    yield http_runner
+    # Restore original method
+    http_runner.post = original_post
     http_runner.session.cookies.clear()
