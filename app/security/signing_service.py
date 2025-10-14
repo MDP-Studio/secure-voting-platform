@@ -3,6 +3,7 @@ from flask import current_app
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.exceptions import InvalidSignature
+from .vault_client import vault_client
 
 # --- KEY STORAGE ---
 # We will load the keys into these global variables the first time they are needed.
@@ -36,7 +37,13 @@ def load_keys():
 
 
 def sign_data(data: bytes) -> bytes:
-    """Signs the given data using the app's private key."""
+    """Signs the given data using Vault Transit if configured, otherwise local RSA key."""
+    # Prefer Vault Transit if available
+    key_name = current_app.config.get('VAULT_TRANSIT_KEY', 'results-signing')
+    sig = vault_client.transit_sign(key_name, data)
+    if sig:
+        return sig
+
     if _private_key is None:
         load_keys()  # Attempt to load the keys on first use.
 
@@ -54,7 +61,13 @@ def sign_data(data: bytes) -> bytes:
     return signature
 
 def verify_signature(data: bytes, signature: bytes) -> bool:
-    """Verifies a signature against the data using the app's public key."""
+    """Verifies a signature using Vault Transit if configured, otherwise local RSA public key."""
+    key_name = current_app.config.get('VAULT_TRANSIT_KEY', 'results-signing')
+    if vault_client.is_enabled:
+        try:
+            return vault_client.transit_verify(key_name, data, signature)
+        except Exception:
+            pass
     if _public_key is None:
         load_keys()  # Attempt to load the keys on first use.
 

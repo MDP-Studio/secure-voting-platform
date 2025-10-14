@@ -27,9 +27,9 @@ def sign_election_results():
     ADMIN-ONLY ENDPOINT.
     Signs the final election results and stores the signature.
     """
-    # In a real app, you would add a check here to ensure current_user is an admin.
-    # if not current_user.is_admin:
-    #     return jsonify({"error": "Forbidden"}), 403
+    # Enforce manager role (admin-equivalent) for signing
+    if not getattr(current_user, "is_manager", False):
+        return jsonify({"error": "Forbidden"}), 403
 
     # Convert results dictionary to a consistent JSON string (bytes)
     results_json = json.dumps(ELECTION_RESULTS, sort_keys=True, separators=(',', ':')).encode('utf-8')
