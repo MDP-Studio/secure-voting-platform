@@ -227,6 +227,60 @@ def register():
         confirm    = request.form.get('confirm') or ''
         lic_no     = (request.form.get('driver_lic_no') or '').strip()
         lic_state  = (request.form.get('driver_lic_state') or '').strip()
+        
+        # --- GEO CHECK: compare selected state to middleware-detected state ---
+        # Middleware is expected to supply geo info in one of several places.
+        # If no subdivision/state is available, skip the check but log it.
+        detected_state = None
+
+        # 1) flask.g (preferred if middleware attached there)
+        if getattr(g, "geo_state", None):
+            detected_state = g.geo_state
+        # 2) common header names (middleware/proxy may set these)
+        elif request.headers.get('X-GeoIP-Subdivision'):
+            detected_state = request.headers.get('X-GeoIP-Subdivision')
+        elif request.headers.get('X-GeoIP-State'):
+            detected_state = request.headers.get('X-GeoIP-State')
+        elif request.headers.get('X-Country-Subdivision'):
+            detected_state = request.headers.get('X-Country-Subdivision')
+        # 3) environ variable (some middleware sets GEOIP_* in environ)
+        elif request.environ.get('GEOIP_SUBDIVISION'):
+            detected_state = request.environ.get('GEOIP_SUBDIVISION')
+
+        # Normalize detected state to standard AU codes where possible
+        if detected_state:
+            ds = detected_state.strip().upper()
+            fullname_map = {
+                "NEW SOUTH WALES": "NSW",
+                "NSW": "NSW",
+                "VICTORIA": "VIC",
+                "VIC": "VIC",
+                "QUEENSLAND": "QLD",
+                "QLD": "QLD",
+                "SOUTH AUSTRALIA": "SA",
+                "SA": "SA",
+                "WESTERN AUSTRALIA": "WA",
+                "WA": "WA",
+                "TASMANIA": "TAS",
+                "TAS": "TAS",
+                "NORTHERN TERRITORY": "NT",
+                "NT": "NT",
+                "AUSTRALIAN CAPITAL TERRITORY": "ACT",
+                "ACT": "ACT",
+            }
+            detected_state_code = fullname_map.get(ds)
+        else:
+            detected_state_code = None
+            logging.info("Geo-check: no subdivision/state available from middleware for registration attempt.")
+
+        # If user supplied a licence state, compare against detected state code
+        if lic_state:
+            user_state_code = lic_state.strip().upper()
+            if detected_state_code and user_state_code != detected_state_code:
+                logging.warning(f"Registration geo-mismatch: user selected {user_state_code}, detected {detected_state_code} (IP).")
+                flash("Selected state does not match the detected location from your IP address. If you are using a VPN or the detection failed, contact an administrator for support.")
+                return render_template('register.html', prev_username=username, prev_email=email)
+
 
         # Username
         if not USERNAME_RE.fullmatch(username):
