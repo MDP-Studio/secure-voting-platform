@@ -108,6 +108,9 @@ def vote():
     # request already recorded a vote for this user, the unique constraint
     # on Vote.user_id will raise IntegrityError which we catch and handle.
     try:
+        # TODO: re-implement an ATOMIC transaction here if it was removed
+        # TODO: generally apply structure and patterns in a new security requirement
+
         # Mark user as voted
         current_user.has_voted = True
         db.session.add(v)

@@ -2,6 +2,14 @@
 
 A secure online voting platform inspired by Australian electoral systems, featuring multi-factor authentication, geo-filtering, and comprehensive security measures.
 
+## Quick Links 🔗
+
+- **Basic Flask App Demo:** [http://localhost:5000](http://localhost:5000) (no WAF protection)
+- **WAF Protected:** [http://localhost](http://localhost) (with nginx + ModSecurity)
+- **Test Documentation:** [tests/README.md](tests/README.md)
+- **WAF Demo Tool:** `/tests/test_waf_demo.py`
+- **Testing Section:** [Jump to Testing](#testing)
+
 ## Local Development
 
 1. **Install dependencies:**
@@ -103,14 +111,51 @@ export ENABLE_MFA="True"
    python run_tests.py
    ```
 
+3. **Validate WAF Security:** 🛡️
+   ```bash
+   python ./tests/test_waf_demo.py
+
+   python ./tests/test_vote_rate_limiting.py
+   ```
+
 📖 **Detailed testing guide:** See [`tests/README.md`](tests/README.md) for comprehensive testing documentation, including security test validation and debugging examples.
 
 ## Security Features
 
-- **Rate Limiting:** 
+### 🛡️ Web Application Firewall (WAF) Validation
+
+Test the effectiveness of the OWASP ModSecurity Core Rule Set by comparing direct application access vs WAF-protected access:
+
+```bash
+python test_waf_demo.py
+```
+
+This demonstration script shows how the WAF provides additional security layers:
+
+- **Direct Access (port 8000):** Flask application without WAF protection
+- **WAF Protected (port 80):** Traffic filtered through nginx + ModSecurity
+
+**Example Output:**
+```
+================================================================================
+🛡️  WAF FUNCTIONALITY DEMONSTRATION
+================================================================================
+
+🎯 XSS Script Tag:
+  Payload: <script>alert('xss')</script>
+  Direct (port 8000): Status 200 - ⚠️ ALLOWED
+  Through WAF (port 80): Status 403 - 🛡️ BLOCKED
+
+✅ SUCCESS: WAF provides additional security by blocking malicious requests!
+   🛡️  WAF blocked 5 more malicious payloads than direct access.
+```
+
+The WAF automatically blocks common attack vectors including XSS, SQL injection, and other malicious payloads while allowing legitimate traffic.
+
+- **Rate Limiting:**
    - Limits voting to 1 request per minute per IP.
    - Excess requests receive a `503 Service Unavailable` response.
-   
+
 ```sh
 $ curl -X POST http://localhost/vote -d "candidate_id=2"
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current

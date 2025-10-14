@@ -1,0 +1,56 @@
+=====================================
+Testing STRICT MODE first to verify blocking works...
+
+🧪 Testing STRICT MODE rate limiting on /vote endpoint
+   Configuration: restrictive limits for production security
+   Expected: Should trigger 503 Service Unavailable on burst exceed
+
+Making 10 rapid POST requests to /vote (strict mode)...
+Vote POST 1: 200
+Vote POST 2: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 3: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 4: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 5: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 6: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 7: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 8: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 9: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 10: 503 ⚠️  SERVICE UNAVAILABLE!
+
+📊 STRICT MODE RESULTS:
+   Total requests: 10
+   Rate limited (429): 0
+   Service unavailable (503): 9
+   Successful responses: 1
+
+✅ SUCCESS: Rate limiting is working in strict mode!
+
+🧪 Testing TEST MODE rate limiting on /vote endpoint
+   Configuration: relaxed limits for development/integration testing
+   Expected: Should allow more requests before limiting
+
+Making 10 rapid POST requests to /vote (test mode)...
+Vote POST 1: 200
+Vote POST 2: 200
+Vote POST 3: 200
+Vote POST 4: 200
+Vote POST 5: 200
+Vote POST 6: 200
+Vote POST 7: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 8: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 9: 503 ⚠️  SERVICE UNAVAILABLE!
+Vote POST 10: 503 ⚠️  SERVICE UNAVAILABLE!
+
+📊 TEST MODE RESULTS:
+   Total requests: 10
+   Rate limited (429): 0
+   Service unavailable (503): 4
+   Successful responses: 6
+
+✅ SUCCESS: Rate limiting is working in test mode!
+
+==================================================
+FINAL SUMMARY:
+🎉 Rate limiting is working correctly!
+   ✅ Strict mode blocks excessive requests
+   ✅ Test mode also working (different limits)
