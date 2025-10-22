@@ -129,7 +129,7 @@ def init_database(app):
                      account_status="approved",
                 )
                 admin.role = manager_role
-                admin.set_password("admin123")  # >=8, letters+digits
+                admin.set_password("Admin@123456!")  # Meet password policy requirements
                 db.session.add(admin)
             else:
                 # ensure important fields are present/consistent
@@ -154,7 +154,7 @@ def init_database(app):
                      account_status="approved",
                 )
                 delegate1.role = delegate_role
-                delegate1.set_password("delegate123")
+                delegate1.set_password("Delegate@123!")
                 db.session.add(delegate1)
             else:
                 delegate1.driver_lic_no = delegate1.driver_lic_no or make_lic("DELEG01")
@@ -177,7 +177,7 @@ def init_database(app):
                      account_status="approved",
                 )
                 voter1.role = voter_role
-                voter1.set_password("password123")
+                voter1.set_password("Password@123!")
                 db.session.add(voter1)
             else:
                 voter1.driver_lic_no = voter1.driver_lic_no or make_lic("VOTER01")
@@ -200,7 +200,7 @@ def init_database(app):
                      account_status="approved",
                 )
                 lix.role = voter_role
-                lix.set_password("password123")
+                lix.set_password("Password@123!")
                 db.session.add(lix)
             else:
                 lix.driver_lic_no = lix.driver_lic_no or make_lic("LIX0001")
@@ -372,10 +372,10 @@ def init_database(app):
 
         print(" 🧀✅ Database initialized")
         print(" 🧑‍💻 Logins you can use:")
-        print("  manager  → admin / admin123")
-        print("  delegate → delegate1 / delegate123")
-        print("  voter    → voter1 / password123")
-        print("  voter    → lix / password123")
+        print("  manager  → admin / Admin@123456!")
+        print("  delegate → delegate1 / Delegate@123!")
+        print("  voter    → voter1 / Password@123!")
+        print("  voter    → lix / Password@123!")
 
 
 if __name__ == "__main__":
