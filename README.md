@@ -7,6 +7,7 @@ A secure online voting platform inspired by Australian electoral systems, featur
 - **Basic Flask App Demo:** [http://localhost:5000](http://localhost:5000) (no WAF protection)
 - **WAF Protected:** [http://localhost](http://localhost) (with nginx + ModSecurity)
 - **Test Documentation:** [tests/README.md](tests/README.md)
+- **Password Policy:** [docs/PASSWORD_POLICY.md](docs/PASSWORD_POLICY.md)
 - **WAF Demo Tool:** `/tests/test_waf_demo.py`
 - **Testing Section:** [Jump to Testing](#testing)
 
@@ -27,10 +28,22 @@ A secure online voting platform inspired by Australian electoral systems, featur
 
 3. **Access:** `http://localhost:5000`
 
-**Credentials:**
- - Manager: admin / admin123
- - Delegate: delegate1 / delegate123
- - Voter: voter1 / password123
+**Default Credentials:**
+ - Manager: admin / Admin@123456!
+ - Delegate: delegate1 / Delegate@123!
+ - Voter: voter1 / Password@123!
+
+**Note:** All passwords must meet strong password requirements:
+- Minimum 12 characters
+- At least 1 uppercase letter (A-Z)
+- At least 1 lowercase letter (a-z)
+- At least 1 special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
+
+**Security Features:**
+- 🔒 Account lockout after 5 failed login attempts (30 min lockout)
+- ⏰ Password expiration after 90 days
+- 🔑 Secure password change functionality
+- 📋 See [Password Policy Documentation](docs/PASSWORD_POLICY.md) for details
 
 ## Scripts
 

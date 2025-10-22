@@ -121,9 +121,19 @@ def login():
         if not user:
             flash('User not found')
             return render_template('login.html', prev_username=username)
+        
+        # --- Check if account is locked ---
+        if user.is_account_locked():
+            flash('Account is locked due to multiple failed login attempts. Please try again later or contact support.')
+            logging.warning(f"Login attempt on locked account: '{username}'")
+            return render_template('login.html', prev_username=username)
 
         # --- Step 2: password must match ---
         if not password or not user.check_password(password):
+            # Record failed login attempt
+            user.record_failed_login()
+            db.session.commit()
+            
             flash('Invalid password')
             
             # Get user's IP for logging failed attempts, as it's still useful.
@@ -131,12 +141,26 @@ def login():
             user_ip = forwarded_for.split(',')[0].strip() if forwarded_for else request.remote_addr
             logging.warning(f"Failed login attempt for username: '{username}' from IP: {user_ip}")
             
+            # Inform user if account is now locked
+            if user.is_account_locked():
+                flash('Account has been locked due to multiple failed login attempts. Please try again in 30 minutes or contact support.', 'error')
+            
             return render_template('login.html', prev_username=username)
           
 
         # Check if MFA is enabled
         if not current_app.config.get('ENABLE_MFA', False):
             # Skip OTP, directly log in
+            # Reset failed login attempts on successful login
+            user.reset_failed_logins()
+            db.session.commit()
+            
+            # Check if password is expired
+            if user.is_password_expired():
+                flash('Your password has expired. Please change it to continue.', 'warning')
+                login_user(user)  # Login briefly to allow password change
+                return redirect(url_for('password.change_password'))
+            
             login_user(user)
 
             # issue JWT session token and set as secure HttpOnly cookie
@@ -191,6 +215,16 @@ def login():
         for k in ('otp_code', 'otp_user', 'otp_expires_at', 'otp_attempts'):
             session.pop(k, None)
 
+        # Reset failed login attempts on successful login
+        user.reset_failed_logins()
+        db.session.commit()
+        
+        # Check if password is expired
+        if user.is_password_expired():
+            flash('Your password has expired. Please change it to continue.', 'warning')
+            login_user(user)  # Login briefly to allow password change
+            return redirect(url_for('password.change_password'))
+        
         login_user(user)
         token = issue_token(user.id)
         if not getattr(user, "is_approved", False):
