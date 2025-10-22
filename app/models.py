@@ -33,14 +33,21 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(255), unique=True)
     password_hash = db.Column(db.String(255), nullable=False)
 
-   # driver_lic_no = db.Column(db.String(32), unique=True, nullable=False, index=True)
+    # Driver licence (used for identity binding)
+    driver_lic_no = db.Column(db.String(32), unique=True, nullable=False, index=True)
+    driver_lic_state = db.Column(db.String(8), nullable=True)  # e.g., VIC/NSW/QLD/...
 
     role_id = db.Column(db.Integer, db.ForeignKey("roles.id"), nullable=False)
-    role = db.relationship("Role", backref=db.backref("user", lazy="dynamic"))
+    # one role -> many users
+    role = db.relationship("Role", backref=db.backref("users", lazy="dynamic"))
+
+    # Admin approval state (String, no Enum)
+    account_status = db.Column(db.String(20), nullable=False, default="pending")
 
     has_voted = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # helpers
     def set_password(self, password: str):
         self.password_hash = generate_password_hash(password)
 
@@ -61,6 +68,10 @@ class User(UserMixin, db.Model):
     @property
     def is_manager(self):
         return self.has_role("manager")
+
+    @property
+    def is_approved(self) -> bool:
+        return (self.account_status or "").lower() == "approved"
 
     def __repr__(self):
         return f"<User {self.username} ({self.role.name if self.role else 'no-role'})>"
@@ -85,8 +96,8 @@ class ElectoralRoll(db.Model):
     region_id = db.Column(db.Integer, db.ForeignKey("regions.id"), nullable=False)
     region = db.relationship("Region")
 
-    status = db.Column(db.Enum("active","suspended","removed", name="roll_status"),
-                       nullable=False, default="active")
+    # <-- CHANGED: use String instead of Enum to avoid enum-mismatch errors
+    status = db.Column(db.String(20), nullable=False, default="active")
     verified = db.Column(db.Boolean, nullable=False, default=False)
     verified_at = db.Column(db.DateTime)
 
@@ -107,14 +118,16 @@ class Candidate(db.Model):
     name = db.Column(db.String(120), nullable=False)
     party = db.Column(db.String(120), nullable=True)
     position = db.Column(db.String(120), nullable=False)
+
+    region_id = db.Column(db.Integer, db.ForeignKey("regions.id"), nullable=False)
+    region = db.relationship("Region")
+
     votes = db.relationship(
         "Vote",
         backref=db.backref("candidate", lazy="joined"),
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    region_id = db.Column(db.Integer, db.ForeignKey("regions.id"), nullable=False)
-    region = db.relationship("Region")
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
