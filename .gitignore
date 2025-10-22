@@ -196,3 +196,6 @@ secrets.json
 config/secrets/
 
 !/data/GeoLite2-Country.mmdb
+
+## Ignore sensitive key files
+*.pem

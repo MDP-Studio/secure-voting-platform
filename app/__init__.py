@@ -100,15 +100,17 @@ def create_app(test_config=None):
 
     # import blueprints (auth and main routes already in repo)
     from app import auth
-    from app.routes import main, dev_routes, health, candidates, registration
+    from app.routes import main, dev_routes, health, candidates, registration, results
     from app.routes.otp import otp_bp   # Create OTP blueprint
-
+    from .results import results as results_blueprint
+    app.register_blueprint(results_blueprint)
     app.register_blueprint(auth.auth)
     app.register_blueprint(main.main)
     app.register_blueprint(dev_routes.dev)
     app.register_blueprint(health.health)
     app.register_blueprint(candidates.candidates)
     app.register_blueprint(registration.registration)
+    app.register_blueprint(results.results)
     app.register_blueprint(otp_bp)      # Register OTP blueprint
 
     # create database tables if they don't exist
