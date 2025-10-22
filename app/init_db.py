@@ -1,4 +1,5 @@
 # init_db.py
+import os
 from datetime import datetime, date
 from app import db
 from app.models import (
@@ -12,6 +13,17 @@ from app.models import (
 # -------------------------------------------------------------------
 # Utilities
 # -------------------------------------------------------------------
+
+# Import test voter data (optional)
+try:
+    from app.generate_test_voters import get_test_voters
+    TEST_VOTERS_AVAILABLE = True
+except ImportError:
+    TEST_VOTERS_AVAILABLE = False
+    print("⚠️  Test voter generator not available")
+
+
+# small helper so we don't duplicate rows
 def get_or_create(model, defaults=None, **kwargs):
     """
     Simple get-or-create helper to avoid duplicate seed rows.
@@ -198,8 +210,36 @@ def init_database(app):
                 if not lix.account_status:
                     lix.account_status = "approved"
 
-            db.session.flush()  # refresh ids if needed
-            voter1 = User.query.filter_by(username="voter1").first()
+            # Create test voters if enabled via environment variable
+            create_test_voters = os.environ.get('CREATE_TEST_VOTERS', 'false').lower() == 'true'
+            if create_test_voters and TEST_VOTERS_AVAILABLE:
+                print("🧪 Creating 100 test voters for testing purposes...")
+                test_voters_data = get_test_voters()
+                created_count = 0
+                
+                for voter_data in test_voters_data:
+                    # Check if test voter already exists
+                    if not User.query.filter_by(username=voter_data['username']).first():
+                        test_user = User(
+                            username=voter_data['username'],
+                            email=voter_data['email'],
+                            role=voter_role,
+                            has_voted=False,
+                            created_at=datetime.utcnow(),
+                        )
+                        test_user.set_password(voter_data['password'])
+                        db.session.add(test_user)
+                        created_count += 1
+                
+                if created_count > 0:
+                    print(f"✅ Created {created_count} test voters")
+                else:
+                    print("ℹ️  Test voters already exist, skipping creation")
+            elif create_test_voters and not TEST_VOTERS_AVAILABLE:
+                print("⚠️  CREATE_TEST_VOTERS is enabled but test voter generator is not available")
+
+            db.session.flush()
+            voter1 = User.query.filter_by(username="voter1").first()  # refresh to ensure id
         except Exception as e:
             print(f"❌ Failed to create users: {e}")
             print("💡 Check User/Role schema. If mismatched, reset DB and re-run.")
@@ -225,6 +265,44 @@ def init_database(app):
                     user_id=voter1.id,
                 )
                 db.session.add(er)
+
+            # Create electoral roll entries for test voters if they were created
+            if create_test_voters and TEST_VOTERS_AVAILABLE:
+                print("🗳️  Creating electoral roll entries for test voters...")
+                test_voters_data = get_test_voters()
+                regions = Region.query.all()  # Get all available regions
+                roll_entries_created = 0
+                
+                for voter_data in test_voters_data:
+                    # Find the corresponding user
+                    test_user = User.query.filter_by(username=voter_data['username']).first()
+                    if test_user and not ElectoralRoll.query.filter_by(user_id=test_user.id).first():
+                        # Assign random region for testing
+                        random_region = regions[hash(voter_data['username']) % len(regions)]
+                        
+                        er = ElectoralRoll(
+                            roll_number=voter_data['roll_number'],
+                            driver_license_number=voter_data['driver_license_number'],
+                            full_name=voter_data['full_name'],
+                            date_of_birth=voter_data['date_of_birth'],
+                            address_line1=voter_data['address_line1'],
+                            suburb=voter_data['suburb'],
+                            state=voter_data['state'],
+                            postcode=voter_data['postcode'],
+                            region_id=random_region.id,
+                            status="active",
+                            verified=True,
+                            verified_at=datetime.utcnow(),
+                            user_id=test_user.id,
+                        )
+                        db.session.add(er)
+                        roll_entries_created += 1
+                
+                if roll_entries_created > 0:
+                    print(f"✅ Created {roll_entries_created} electoral roll entries for test voters")
+                else:
+                    print("ℹ️  Electoral roll entries for test voters already exist")
+
         except Exception as e:
             print(f"❌ Failed to create electoral roll entry: {e}")
             print("💡 This might indicate a schema mismatch in the ElectoralRoll table.")

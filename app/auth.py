@@ -1,7 +1,7 @@
 from datetime import datetime
 from flask import (
     Blueprint, render_template, redirect, url_for, flash,
-    request, session, make_response, current_app
+    request, session, make_response, current_app,g
 )
 from flask_login import login_user, logout_user, current_user
 import logging
@@ -227,38 +227,92 @@ def register():
         confirm    = request.form.get('confirm') or ''
         lic_no     = (request.form.get('driver_lic_no') or '').strip()
         lic_state  = (request.form.get('driver_lic_state') or '').strip()
+        
+        # --- GEO CHECK: compare selected state to middleware-detected state ---
+        # Middleware is expected to supply geo info in one of several places.
+        # If no subdivision/state is available, skip the check but log it.
+        detected_state = None
+
+        # 1) flask.g (preferred if middleware attached there)
+        if getattr(g, "geo_state", None):
+            detected_state = g.geo_state
+        # 2) common header names (middleware/proxy may set these)
+        elif request.headers.get('X-GeoIP-Subdivision'):
+            detected_state = request.headers.get('X-GeoIP-Subdivision')
+        elif request.headers.get('X-GeoIP-State'):
+            detected_state = request.headers.get('X-GeoIP-State')
+        elif request.headers.get('X-Country-Subdivision'):
+            detected_state = request.headers.get('X-Country-Subdivision')
+        # 3) environ variable (some middleware sets GEOIP_* in environ)
+        elif request.environ.get('GEOIP_SUBDIVISION'):
+            detected_state = request.environ.get('GEOIP_SUBDIVISION')
+
+        # Normalize detected state to standard AU codes where possible
+        if detected_state:
+            ds = detected_state.strip().upper()
+            fullname_map = {
+                "NEW SOUTH WALES": "NSW",
+                "NSW": "NSW",
+                "VICTORIA": "VIC",
+                "VIC": "VIC",
+                "QUEENSLAND": "QLD",
+                "QLD": "QLD",
+                "SOUTH AUSTRALIA": "SA",
+                "SA": "SA",
+                "WESTERN AUSTRALIA": "WA",
+                "WA": "WA",
+                "TASMANIA": "TAS",
+                "TAS": "TAS",
+                "NORTHERN TERRITORY": "NT",
+                "NT": "NT",
+                "AUSTRALIAN CAPITAL TERRITORY": "ACT",
+                "ACT": "ACT",
+            }
+            detected_state_code = fullname_map.get(ds)
+        else:
+            detected_state_code = None
+            logging.info("Geo-check: no subdivision/state available from middleware for registration attempt.")
+
+        # If user supplied a licence state, compare against detected state code
+        if lic_state:
+            user_state_code = lic_state.strip().upper()
+            if detected_state_code and user_state_code != detected_state_code:
+                logging.warning(f"Registration geo-mismatch: user selected {user_state_code}, detected {detected_state_code} (IP).")
+                flash("Selected state does not match the detected location from your IP address. If you are using a VPN or the detection failed, contact an administrator for support.")
+                return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
+
 
         # Username
         if not USERNAME_RE.fullmatch(username):
             flash("Username must be 3-32 chars (letters, digits, _.-)")
-            return render_template('register.html', prev_username=username, prev_email=email)
+            return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
         if User.query.filter_by(username=username).first():
             flash("Username already taken")
-            return render_template('register.html', prev_username=username, prev_email=email)
+            return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
         # Email
         if not EMAIL_RE.fullmatch(email):
             flash("Invalid email format")
-            return render_template('register.html', prev_username=username, prev_email=email)
+            return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
         if User.query.filter_by(email=email).first():
             flash("Email already registered")
-            return render_template('register.html', prev_username=username, prev_email=email)
+            return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
         # Password
         if password != confirm:
             flash("Passwords do not match")
-            return render_template('register.html', prev_username=username, prev_email=email)
+            return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
         if not is_strong_password(password):
             flash("Password too weak: must be 8+ chars with letters and digits")
-            return render_template('register.html', prev_username=username, prev_email=email)
+            return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
         # Driver licence
         if not validate_driver_lic(lic_no, lic_state or None):
             flash("Invalid driver licence number")
-            return render_template('register.html', prev_username=username, prev_email=email)
+            return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
         if User.query.filter_by(driver_lic_no=lic_no).first():
             flash("Driver licence already bound to another account")
-            return render_template('register.html', prev_username=username, prev_email=email)
+            return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
         # Ensure voter role exists
         voter_role = Role.query.filter_by(name="voter").first()
@@ -305,7 +359,7 @@ def register():
         except Exception as e:
             db.session.rollback()
             flash(f"Failed to create user: {e}")
-            return render_template('register.html', prev_username=username, prev_email=email)
+            return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
         flash("Registration submitted. Waiting for admin approval.")
         return redirect(url_for('auth.login'))
