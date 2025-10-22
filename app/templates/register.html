@@ -1,104 +1,39 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Register | notAEC</title>
-  <!-- Favicons -->
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
-  <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <style>
-    :root {
-      --primary: #4c1d95;
-      --primary-darker: #3730a3;
-      --accent: #00c389;
-      --dark: #1e293b;
-      --light: #f8fafc;
-      --warning: #f59e0b;
-    }
-
-    body {
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
-      background: linear-gradient(180deg, #f3f6ff 0%, #ffffff 35%);
-      color: #334155;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .navbar {
-      box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
-      background: #fff;
-    }
-
-    .brand-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: .6rem;
-      font-weight: 800;
-      font-size: 1.35rem;
-      color: var(--primary);
-      letter-spacing: .2px;
-    }
-
-    .brand-badge i {
-      font-size: 1.25rem;
-      color: var(--accent);
-    }
-
-    .btn-primary {
-      background-color: var(--primary);
-      border-color: var(--primary);
-      padding: .75rem 1.25rem;
-      font-weight: 600;
-      border-radius: .75rem;
-    }
-
-    .btn-primary:hover { background-color: var(--primary-darker); border-color: var(--primary-darker); }
-
-    .btn-outline-primary { border-radius: .75rem; font-weight: 600; }
-
-    .register-wrap { flex: 1; display: grid; place-items: center; padding: 2.5rem 1rem; }
-
-    .card-register {
-      width: 100%;
-      max-width: 600px;
-      background: #fff;
-      border: 0;
-      border-radius: 1rem;
-      box-shadow: 0 12px 32px rgba(2, 6, 23, .08);
-      overflow: hidden;
-    }
-
-    .pane-form { padding: 2rem; }
-    .form-title { margin-bottom: .25rem; font-weight: 800; color: var(--dark); }
-    .form-sub { color: #64748b; margin-bottom: 1.25rem; }
-
-    .form-control { padding: .85rem 1rem; border-radius: .75rem; border: 1px solid #e2e8f0; }
-    .form-control:focus { border-color: var(--primary); box-shadow: 0 0 0 .2rem rgba(76, 29, 149, .15); }
-    .form-label { font-weight: 700; color: var(--dark); }
-
-    .input-group>.btn { border-top-right-radius: .75rem; border-bottom-right-radius: .75rem; }
-
-    .divider { display: grid; grid-template-columns: 1fr auto 1fr; gap: .75rem; align-items: center; margin: 1.25rem 0; color: #94a3b8; }
-    .divider::before, .divider::after { content: ""; border-top: 1px solid #e2e8f0; height: 1px; }
-
-    .footer { background: #0b1220; color: #cbd5e1; margin-top: auto; }
-    .footer a { color: #cbd5e1; text-decoration: none; }
-    .footer a:hover { text-decoration: underline; }
+    :root { --primary:#4c1d95; --primary-darker:#3730a3; --accent:#00c389; --dark:#1e293b; --light:#f8fafc; --warning:#f59e0b; }
+    body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,Cantarell,"Noto Sans","Helvetica Neue",Arial,"Apple Color Emoji","Segoe UI Emoji";
+      background:linear-gradient(180deg,#f3f6ff 0%,#ffffff 35%); color:#334155; min-height:100vh; display:flex; flex-direction:column;}
+    .navbar{box-shadow:0 2px 8px rgba(0,0,0,.06); background:#fff;}
+    .brand-badge{display:inline-flex; align-items:center; gap:.6rem; font-weight:800; font-size:1.35rem; color:var(--primary); letter-spacing:.2px;}
+    .btn-primary{background-color:var(--primary); border-color:var(--primary); padding:.75rem 1.25rem; font-weight:600; border-radius:.75rem;}
+    .btn-primary:hover{background-color:var(--primary-darker); border-color:var(--primary-darker);}
+    .btn-outline-primary{border-radius:.75rem; font-weight:600;}
+    .register-wrap{flex:1; display:grid; place-items:center; padding:2.5rem 1rem;}
+    .card-register{width:100%; max-width:600px; background:#fff; border:0; border-radius:1rem; box-shadow:0 12px 32px rgba(2,6,23,.08); overflow:hidden;}
+    .pane-form{padding:2rem;} .form-title{margin-bottom:.25rem; font-weight:800; color:#1e293b;} .form-sub{color:#64748b; margin-bottom:1.25rem;}
+    .form-control{padding:.85rem 1rem; border-radius:.75rem; border:1px solid #e2e8f0;}
+    .form-control:focus{border-color:var(--primary); box-shadow:0 0 0 .2rem rgba(76,29,149,.15);}
+    .form-label{font-weight:700; color:#1e293b;}
+    .divider{display:grid; grid-template-columns:1fr auto 1fr; gap:.75rem; align-items:center; margin:1.25rem 0; color:#94a3b8;}
+    .divider::before,.divider::after{content:""; border-top:1px solid #e2e8f0; height:1px;}
+    .footer{background:#0b1220; color:#cbd5e1; margin-top:auto;}
+    .footer a{color:#cbd5e1; text-decoration:none;} .footer a:hover{text-decoration:underline;}
   </style>
 </head>
-
 <body>
   <!-- Top Nav -->
   <nav class="navbar navbar-expand-lg py-3">
     <div class="container">
-        <a class="navbar-brand brand-badge" href="#">
+      <a class="navbar-brand brand-badge" href="#">
         <img src="{{ url_for('static', filename='logo.svg') }}" alt="notAEC Logo" width="32" height="32" class="me-2">
         notAEC
       </a>
@@ -129,35 +64,105 @@
         <h3 class="form-title">Voter Registration</h3>
         <p class="form-sub">Create your account to participate in secure online voting.</p>
 
-        {% with messages = get_flashed_messages() %}
-        {% if messages %}
-        <div class="mb-3">
-          {% for message in messages %}
-          <div class="alert alert-info" role="alert">{{ message }}</div>
-          {% endfor %}
-        </div>
-        {% endif %}
+        {% with messages = get_flashed_messages(with_categories=True) %}
+          {% if messages %}
+            <div class="mb-3">
+              {% for category, message in messages %}
+                <div class="alert alert-{{ 'success' if category=='success' else 'danger' }}" role="alert">
+                  {{ message }}
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
         {% endwith %}
 
-        <form action="{{ url_for('registration.register') }}" method="post">
+        <!-- IMPORTANT: submit to auth.register -->
+        <form action="{{ url_for('auth.register') }}" method="post" novalidate>
+          <!-- Username -->
           <div class="mb-3">
             <label for="username" class="form-label">Username</label>
-            <input type="text" class="form-control" id="username" name="username" required />
+            <input type="text"
+                   class="form-control"
+                   id="username"
+                   name="username"
+                   required
+                   value="{{ prev_username or '' }}"
+                   placeholder="3-32 chars (letters/digits/_ . -)"
+                   minlength="3" maxlength="32"
+                   pattern="^[A-Za-z0-9_.-]{3,32}$"
+                   autocomplete="username"
+                   autofocus>
           </div>
+
+          <!-- Email -->
           <div class="mb-3">
             <label for="email" class="form-label">Email</label>
-            <input type="email" class="form-control" id="email" name="email" required />
+            <input type="email"
+                   class="form-control"
+                   id="email"
+                   name="email"
+                   required
+                   value="{{ prev_email or '' }}"
+                   placeholder="you@example.com"
+                   autocomplete="email">
           </div>
-          <div class="mb-3">
-            <label for="password" class="form-label">Password</label>
-            <input type="password" class="form-control" id="password" name="password" required minlength="6" />
+
+          <!-- Password + Confirm -->
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label for="password" class="form-label">Password</label>
+              <input type="password"
+                     class="form-control"
+                     id="password"
+                     name="password"
+                     required
+                     minlength="8"
+                     pattern="(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}"
+                     title="At least 8 characters, including letters and digits"
+                     autocomplete="new-password">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label for="confirm" class="form-label">Confirm Password</label>
+              <input type="password"
+                     class="form-control"
+                     id="confirm"
+                     name="confirm"
+                     required
+                     autocomplete="new-password">
+            </div>
           </div>
+
+          <!-- Driver Licence -->
+          <div class="row">
+            <div class="col-md-8 mb-3">
+              <label for="driver_lic_no" class="form-label">Driver Licence Number</label>
+              <input type="text"
+                     class="form-control"
+                     id="driver_lic_no"
+                     name="driver_lic_no"
+                     required
+                     placeholder="6–10 alphanumeric; last is check digit/X"
+                     minlength="6" maxlength="10"
+                     pattern="[A-Za-z0-9]{6,10}"
+                     inputmode="latin">
+            </div>
+            <div class="col-md-4 mb-3">
+              <label for="driver_lic_state" class="form-label">State</label>
+              <select class="form-select" id="driver_lic_state" name="driver_lic_state">
+                <option value="">Select</option>
+                {% for s in ["ACT","NSW","NT","QLD","SA","TAS","VIC","WA"] %}
+                  <option value="{{ s }}" {% if prev_state==s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
           <button type="submit" class="btn btn-primary w-100">
             <i class="fa-solid fa-user-plus me-1"></i> Register
           </button>
         </form>
 
-        <div class="divider"><span>already have an account?</span></div>
+        <div class="divider"><span>Already have an account?</span></div>
 
         <a href="{{ url_for('auth.login') }}" class="btn btn-outline-primary w-100">
           <i class="fa-solid fa-right-to-bracket me-1"></i> Sign In
@@ -182,8 +187,6 @@
     </div>
   </footer>
 
-  <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
-
 </html>

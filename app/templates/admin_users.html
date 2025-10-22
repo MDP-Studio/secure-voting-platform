@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container py-4">
+  <h2 class="mb-3">User Administration</h2>
+
+  {% for cat, items in [("Pending", pending_users), ("Approved", approved_users), ("Rejected", rejected_users)] %}
+    <h4 class="mt-4">{{ cat }}</h4>
+    {% if items %}
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Username</th><th>Email</th><th>Driver Licence</th>
+            <th>Role</th><th>Created</th><th style="width:220px">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for u in items %}
+          <tr>
+            <td>{{ u.username }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.driver_lic_no }} ({{ u.driver_lic_state }})</td>
+            <td>{{ u.role.name if u.role else '—' }}</td>
+            <td>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '' }}</td>
+            <td>
+              {% if cat == "Pending" or cat == "Rejected" %}
+              <form action="{{ url_for('admin_users.approve_user', user_id=u.id) }}" method="post" class="d-inline">
+                <button class="btn btn-sm btn-success">Approve</button>
+              </form>
+              {% endif %}
+              {% if cat == "Pending" or cat == "Approved" %}
+              <form action="{{ url_for('admin_users.reject_user', user_id=u.id) }}" method="post" class="d-inline">
+                <button class="btn btn-sm btn-danger">Reject</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-muted">No {{ cat.lower() }} users.</p>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endblock %}
