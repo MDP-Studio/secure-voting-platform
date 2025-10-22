@@ -27,7 +27,7 @@ def user_is_eligible_to_vote(user):
         user.has_role("voter")
         and not user.has_voted
         and enrol is not None
-        and enrol.status != "pending"
+        and enrol.status == "active"
         and enrol.verified
     )
 
