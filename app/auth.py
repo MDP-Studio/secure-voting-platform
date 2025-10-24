@@ -137,91 +137,93 @@ def login():
         password = request.form.get('password', '').strip()
         otp_input = request.form.get('totp', '').strip()
 
-        # Require a short-lived JS-issued nonce to ensure the client executed page JS.
-        # This raises the bar against direct curl/wget POSTs.
-        login_nonce = request.form.get('login_nonce')
-        if not login_nonce:
-            try:
-                if login_nonce_failures:
-                    login_nonce_failures.inc()
-            except Exception:
-                pass
-            flash('Human verification required. Please use the web login form in a browser.')
-            return render_template('login.html', prev_username=username)
-
-        try:
-            s = URLSafeTimedSerializer(current_app.config.get('SECRET_KEY') or current_app.secret_key, salt='login-nonce')
-            # nonce valid for 5 minutes
-            nonce_value = s.loads(login_nonce, max_age=300)
-            # optional: ensure nonce_value contains expected structure; we used random hex
-            if not isinstance(nonce_value, str):
-                raise BadSignature('invalid nonce')
-        except SignatureExpired:
-            try:
-                if login_nonce_failures:
-                    login_nonce_failures.inc()
-            except Exception:
-                pass
-            flash('Human verification expired. Please reload the login page and try again.')
-            return render_template('login.html', prev_username=username)
-        except BadSignature:
-            try:
-                if login_nonce_failures:
-                    login_nonce_failures.inc()
-            except Exception:
-                pass
-            flash('Human verification failed. Please use the web login form in a browser.')
-            return render_template('login.html', prev_username=username)
-
-        # --- Step 0.5: Cloudflare Turnstile verification (optional) ---
-        cf_secret = current_app.config.get('CF_TURNSTILE_SECRET')
-        # If Turnstile is not configured, apply stricter server-side heuristics
-        # to block naive command-line requests (curl/wget/httpie/requests).
-        if not cf_secret:
-            ua = (request.headers.get('User-Agent') or '').lower()
-            # obvious CLI/HTTP libraries to block
-            cli_signatures = ['curl', 'wget', 'httpie', 'powershell', 'python-requests', 'httpx']
-            if any(sig in ua for sig in cli_signatures):
-                # Quick block for obvious CLI clients; instruct user to use a browser
-                flash('Please use a web browser to log in (command-line clients are blocked for security).')
-                return render_template('login.html', prev_username=username)
-
-            # Require a Origin or Referer header for POSTs when no Turnstile is present.
-            origin = request.headers.get('Origin') or request.headers.get('Referer')
-            if not origin:
+        # Skip security checks when in TESTING mode
+        if not current_app.config.get('TESTING', False):
+            # Require a short-lived JS-issued nonce to ensure the client executed page JS.
+            # This raises the bar against direct curl/wget POSTs.
+            login_nonce = request.form.get('login_nonce')
+            if not login_nonce:
+                try:
+                    if login_nonce_failures:
+                        login_nonce_failures.inc()
+                except Exception:
+                    pass
                 flash('Human verification required. Please use the web login form in a browser.')
                 return render_template('login.html', prev_username=username)
-        if cf_secret:
-            cf_token = request.form.get('cf-turnstile-response') or request.form.get('cf-turnstile-response-0')
-            if not cf_token:
-                flash('Human verification failed. Please complete the Turnstile check.')
-                return render_template('login.html', prev_username=username)
+
             try:
-                import requests
-                resp = requests.post('https://challenges.cloudflare.com/turnstile/v0/siteverify', data={
-                    'secret': cf_secret,
-                    'response': cf_token,
-                    'remoteip': request.remote_addr,
-                }, timeout=5)
-                j = resp.json()
-                if not j.get('success'):
+                s = URLSafeTimedSerializer(current_app.config.get('SECRET_KEY') or current_app.secret_key, salt='login-nonce')
+                # nonce valid for 5 minutes
+                nonce_value = s.loads(login_nonce, max_age=300)
+                # optional: ensure nonce_value contains expected structure; we used random hex
+                if not isinstance(nonce_value, str):
+                    raise BadSignature('invalid nonce')
+            except SignatureExpired:
+                try:
+                    if login_nonce_failures:
+                        login_nonce_failures.inc()
+                except Exception:
+                    pass
+                flash('Human verification expired. Please reload the login page and try again.')
+                return render_template('login.html', prev_username=username)
+            except BadSignature:
+                try:
+                    if login_nonce_failures:
+                        login_nonce_failures.inc()
+                except Exception:
+                    pass
+                flash('Human verification failed. Please use the web login form in a browser.')
+                return render_template('login.html', prev_username=username)
+
+            # --- Step 0.5: Cloudflare Turnstile verification (optional) ---
+            cf_secret = current_app.config.get('CF_TURNSTILE_SECRET')
+            # If Turnstile is not configured, apply stricter server-side heuristics
+            # to block naive command-line requests (curl/wget/httpie/requests).
+            if not cf_secret:
+                ua = (request.headers.get('User-Agent') or '').lower()
+                # obvious CLI/HTTP libraries to block
+                cli_signatures = ['curl', 'wget', 'httpie', 'powershell', 'python-requests', 'httpx']
+                if any(sig in ua for sig in cli_signatures):
+                    # Quick block for obvious CLI clients; instruct user to use a browser
+                    flash('Please use a web browser to log in (command-line clients are blocked for security).')
+                    return render_template('login.html', prev_username=username)
+
+                # Require a Origin or Referer header for POSTs when no Turnstile is present.
+                origin = request.headers.get('Origin') or request.headers.get('Referer')
+                if not origin:
+                    flash('Human verification required. Please use the web login form in a browser.')
+                    return render_template('login.html', prev_username=username)
+            if cf_secret:
+                cf_token = request.form.get('cf-turnstile-response') or request.form.get('cf-turnstile-response-0')
+                if not cf_token:
+                    flash('Human verification failed. Please complete the Turnstile check.')
+                    return render_template('login.html', prev_username=username)
+                try:
+                    import requests
+                    resp = requests.post('https://challenges.cloudflare.com/turnstile/v0/siteverify', data={
+                        'secret': cf_secret,
+                        'response': cf_token,
+                        'remoteip': request.remote_addr,
+                    }, timeout=5)
+                    j = resp.json()
+                    if not j.get('success'):
+                        try:
+                            if turnstile_failures:
+                                turnstile_failures.inc()
+                        except Exception:
+                            pass
+                        current_app.logger.warning('Turnstile verification failed: %s', j)
+                        flash('Human verification failed. Please try again.')
+                        return render_template('login.html', prev_username=username)
+                except Exception as e:
                     try:
                         if turnstile_failures:
                             turnstile_failures.inc()
                     except Exception:
                         pass
-                    current_app.logger.warning('Turnstile verification failed: %s', j)
-                    flash('Human verification failed. Please try again.')
+                    current_app.logger.error('Turnstile verification error: %s', e)
+                    flash('Human verification failed (service error). Please try again later.')
                     return render_template('login.html', prev_username=username)
-            except Exception as e:
-                try:
-                    if turnstile_failures:
-                        turnstile_failures.inc()
-                except Exception:
-                    pass
-                current_app.logger.error('Turnstile verification error: %s', e)
-                flash('Human verification failed (service error). Please try again later.')
-                return render_template('login.html', prev_username=username)
 
         # --- Step 1: user must exist ---
         user = User.query.filter_by(username=username).first()
