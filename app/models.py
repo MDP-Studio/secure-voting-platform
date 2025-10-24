@@ -3,6 +3,7 @@ from datetime import datetime
 from . import db, login_manager
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
+from .security.password_validator import validate_password_strength, PasswordValidationError
 
 # ---- Roles ----
 class Role(db.Model):
@@ -46,13 +47,85 @@ class User(UserMixin, db.Model):
 
     has_voted = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Password policy fields
+    password_changed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
+    account_locked_until = db.Column(db.DateTime, nullable=True)
 
     # helpers
     def set_password(self, password: str):
+        """
+        Set the user's password after validating it meets security requirements.
+        
+        Args:
+            password (str): The password to set
+            
+        Raises:
+            PasswordValidationError: If password does not meet requirements
+        """
+        # Validate password strength
+        is_valid, error_message = validate_password_strength(password)
+        if not is_valid:
+            raise PasswordValidationError(error_message)
+        
+        # Hash and store the password
         self.password_hash = generate_password_hash(password)
+        
+        # Update password change timestamp
+        self.password_changed_at = datetime.utcnow()
+        
+        # Reset failed login attempts when password is changed
+        self.failed_login_attempts = 0
+        self.account_locked_until = None
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
+    
+    def is_account_locked(self) -> bool:
+        """Check if account is currently locked due to failed login attempts."""
+        if self.account_locked_until is None:
+            return False
+        return datetime.utcnow() < self.account_locked_until
+    
+    def record_failed_login(self, max_attempts: int = 5, lockout_minutes: int = 30):
+        """
+        Record a failed login attempt and lock account if threshold is reached.
+        
+        Args:
+            max_attempts: Maximum failed login attempts before lockout (default: 5)
+            lockout_minutes: Duration of account lockout in minutes (default: 30)
+        """
+        from datetime import timedelta
+        
+        self.failed_login_attempts += 1
+        
+        if self.failed_login_attempts >= max_attempts:
+            self.account_locked_until = datetime.utcnow() + timedelta(minutes=lockout_minutes)
+    
+    def reset_failed_logins(self):
+        """Reset failed login counter and unlock account."""
+        self.failed_login_attempts = 0
+        self.account_locked_until = None
+    
+    def is_password_expired(self, expiration_days: int = 90) -> bool:
+        """
+        Check if password has expired based on age.
+        
+        Args:
+            expiration_days: Number of days before password expires (default: 90)
+            
+        Returns:
+            bool: True if password is expired, False otherwise
+        """
+        from datetime import timedelta
+        
+        if self.password_changed_at is None:
+            # If no timestamp, consider it expired for safety
+            return True
+        
+        expiration_date = self.password_changed_at + timedelta(days=expiration_days)
+        return datetime.utcnow() > expiration_date
 
     def has_role(self, *names):
         return self.role and self.role.name in names

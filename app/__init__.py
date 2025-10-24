@@ -66,7 +66,8 @@ def create_app(test_config=None):
     except OSError:
         pass
 
-    # Configure logging
+    # Configure logging (avoid adding duplicate handlers if the app is
+    # created multiple times in the same process — e.g. during tests)
     log_file = os.path.join(app.instance_path, 'app.log')
     logging.basicConfig(
         filename=log_file,
@@ -102,21 +103,24 @@ def create_app(test_config=None):
 
     # import blueprints (auth and main routes already in repo)
     from app import auth
-    from app.routes import main, dev_routes, health, candidates, registration
+    from app.routes import main, dev_routes, health, candidates, registration, password, results
     from app.routes.otp import otp_bp   # Create OTP blueprint
-
     app.register_blueprint(auth.auth)
     app.register_blueprint(main.main)
     app.register_blueprint(dev_routes.dev)
     app.register_blueprint(health.health)
     app.register_blueprint(candidates.candidates)
     app.register_blueprint(registration.registration)
+    app.register_blueprint(results.results)
     app.register_blueprint(otp_bp)      # Register OTP blueprint
+    app.register_blueprint(password.password_bp)  # Register password management blueprint
+
     # expose Prometheus metrics at /metrics (metrics blueprint is optional)
     try:
         app.register_blueprint(metrics_bp)
     except Exception:
-        app.logger.debug('metrics blueprint not registered')
+        app.logger.debug('metrics blueprint not registered'
+
     try:
         from app.routes.admin_users import admin_bp
         app.register_blueprint(admin_bp, url_prefix="/admin")
