@@ -211,15 +211,13 @@
             <div class="invalid-feedback">Please select your election.</div>
           </div>
 
-    <!-- Voter ID (or Email) -->
+          <!-- Voter ID (or Email) -->
           <div class="mb-3">
             <label for="voter_id" class="form-label">Voter ID or Email</label>
-      <input type="text" class="form-control" id="voter_id" name="username" value="{{ prev_username or '' }}"
-    placeholder="e.g., VTR-1234 or name@domain.com" required />
+            <input type="text" class="form-control" id="voter_id" name="username" value="{{ prev_username or '' }}" placeholder="e.g., VTR-1234 or name@domain.com" required />
 
-      <!-- GOTCHA honeypot (hidden). Legit users/browsers won't fill this. -->
-      <input type="text" name="gotcha" id="gotcha_field" autocomplete="off" tabindex="-1"
-          style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" />
+            <!-- GOTCHA honeypot (hidden). Legit users/browsers won't fill this. -->
+            <input type="text" name="gotcha" id="gotcha_field" autocomplete="off" tabindex="-1" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" />
 
             <div class="invalid-feedback">Enter your Voter ID or Email.</div>
           </div>

@@ -10,7 +10,7 @@ import re
 import os
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 try:
-    from app.metrics import login_nonce_failures, gotcha_triggers, turnstile_failures
+    from app.routes.metrics import login_nonce_failures, gotcha_triggers, turnstile_failures
 except Exception:
     # metrics may not be available in some environments; degrade silently
     login_nonce_failures = gotcha_triggers = turnstile_failures = None
@@ -365,6 +365,7 @@ def login_nonce():
 # ------------------------------------------------------------
 # REGISTER (admin approval flow)
 # ------------------------------------------------------------
+# TODO: move this into its own file
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
     """
