@@ -174,7 +174,7 @@ class TestPasswordExpiration:
             # Try to login
             response = client.post('/login', data={
                 'username': 'testuser',
-                'password': 'TestPassword123!'
+                'password': 'SecureTestPass123!'
             }, follow_redirects=False)
             
             # Should redirect to change password
