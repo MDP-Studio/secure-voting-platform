@@ -34,16 +34,6 @@ jobs:
           echo "GEO_FILTER_ENABLED=False" >> $GITHUB_ENV
           echo "ENABLE_MFA=False" >> $GITHUB_ENV
 
-      - name: Initialize database
-        run: |
-          python -c "
-          from app import create_app, db
-          app = create_app()
-          with app.app_context():
-              db.create_all()
-              print('✅ Database initialized')
-          "
-
       - name: Run Smoke Tests
         run: |
           python -m pytest tests/test_smoke.py -v --tb=short
@@ -52,18 +42,37 @@ jobs:
         run: |
           python -m pytest tests/test_password_validation.py tests/test_password_policy.py -v --tb=short
 
-      - name: Run Integration Tests (Basic)
+      - name: Run Integration Tests (Docker)
         run: |
-          # Start Flask app in the background
-          python run_demo.py &
-          APP_PID=$!
-          sleep 3  # Wait for app to start
+          # Build and start Docker containers
+          echo "🐳 Starting Docker containers..."
+          docker-compose up -d
           
-          # Run integration tests
-          python -m pytest tests/integration/test_integration.py::TestHealthChecks -v --tb=short --base-url=http://localhost:5000
+          # Wait for services to be healthy
+          echo "⏳ Waiting for services to be ready..."
+          for i in {1..60}; do
+            # Check if health endpoint responds
+            if curl -f http://localhost/healthz > /dev/null 2>&1; then
+              echo "✅ Services are ready!"
+              break
+            fi
+            echo "⏳ Attempt $i/60: Waiting for services..."
+            sleep 1
+          done
           
-          # Kill the background app
-          kill $APP_PID 2>/dev/null || true
+          # Run integration tests against Docker
+          python -m pytest tests/integration/test_integration.py::TestHealthChecks -v --tb=short --base-url=http://localhost || TEST_RESULT=$?
+          
+          # Show Docker logs for debugging if tests failed
+          if [ ${TEST_RESULT:-0} -ne 0 ]; then
+            echo "❌ Tests failed. Docker logs:"
+            docker-compose logs --tail=50
+          fi
+          
+          # Cleanup
+          docker-compose down -v
+          
+          exit ${TEST_RESULT:-0}
 
       - name: Upload test results
         if: always()
