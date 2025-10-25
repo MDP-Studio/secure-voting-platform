@@ -48,6 +48,12 @@ class HTTPTestRunner:
     def __init__(self, base_url: str = "http://localhost"):
         self.base_url = base_url.rstrip('/')
         self.session = requests.Session()
+        
+        # Spoof a browser User-Agent to bypass CLI client blocking
+        # (Server blocks curl, wget, httpie, python-requests, etc. for security)
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        })
 
         # Rate limiting protection - add delay between requests
         self.last_request_time = 0
@@ -78,17 +84,22 @@ class HTTPTestRunner:
         # First get login page to ensure we have proper session
         response = self.get('/login')
         if response.status_code != 200:
+            logging.error(f"Failed to GET /login: {response.status_code}")
             return False
 
         # Fetch the login nonce (required for security unless in TESTING mode)
         nonce_response = self.get('/login-nonce')
+        nonce = None
         if nonce_response.status_code != 200:
             # If nonce endpoint fails, still try login (might be in TESTING mode)
-            nonce = None
+            logging.warning(f"Failed to GET /login-nonce: {nonce_response.status_code}")
         else:
             try:
-                nonce = nonce_response.json().get('nonce')
-            except Exception:
+                nonce_data = nonce_response.json()
+                nonce = nonce_data.get('nonce')
+                logging.info(f"Successfully fetched nonce: {nonce[:20] if nonce else 'None'}...")
+            except Exception as e:
+                logging.error(f"Failed to parse nonce response JSON: {e}, response: {nonce_response.text[:200]}")
                 nonce = None
 
         # Build login form data
@@ -100,8 +111,16 @@ class HTTPTestRunner:
         # Include nonce if available
         if nonce:
             login_data['login_nonce'] = nonce
+            logging.info(f"Attempting login for {username} with nonce")
+        else:
+            logging.warning(f"Attempting login for {username} WITHOUT nonce (may be in TESTING mode)")
 
         response = self.post('/login', data=login_data, allow_redirects=False)
+
+        # Log the response for debugging
+        logging.info(f"Login POST response status: {response.status_code}")
+        if response.status_code != 302:
+            logging.error(f"Login failed. Response text preview: {response.text[:300]}")
 
         # Success: 302 redirect to appropriate dashboard based on role
         # - voters: /dashboard
