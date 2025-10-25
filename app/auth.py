@@ -464,7 +464,7 @@ def register():
             flash("Passwords do not match")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
         if not is_strong_password(password):
-            flash("Password too weak: must be 8+ chars with letters and digits")
+            flash("Password too weak: must be 12+ chars with uppercase, lowercase, and special character")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
         # Driver licence
