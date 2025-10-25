@@ -136,8 +136,8 @@ def generate_random_voter_data(index):
         "roll_number": f"ER-{1000 + index:04d}",  # ER-1001, ER-1002, etc.
     }
 
-# Generate 100 test voters
-TEST_VOTERS = [generate_random_voter_data(i + 1) for i in range(100)]
+# Generate 110 test voters for development seeding
+TEST_VOTERS = [generate_random_voter_data(i + 1) for i in range(110)]
 
 def get_test_voters():
     """Return the list of test voter data."""
