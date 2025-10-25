@@ -40,6 +40,8 @@ def ask_should_reset() -> bool:
     Supports command-line arguments:
       --reset     → reset DB without asking
       --no-input  → keep DB without asking
+    
+    In non-interactive environments (CI/CD), defaults to keeping existing DB.
     """
     argv = set(arg.lower() for arg in sys.argv[1:])
     if "--reset" in argv:
@@ -47,9 +49,21 @@ def ask_should_reset() -> bool:
     if "--no-input" in argv:
         return False
 
+    # Check if running in interactive mode
+    if not sys.stdin.isatty():
+        # Non-interactive environment (CI/CD) - keep existing DB
+        print(f"⚠️ Existing database detected: {DB_PATH}")
+        print("ℹ️ Running in non-interactive mode - keeping existing database.")
+        return False
+
     print(f"⚠️ Existing database detected: {DB_PATH}")
-    choice = input("Do you want to DELETE and REBUILD the database? (y/N): ").strip().lower()
-    return choice == "y"
+    try:
+        choice = input("Do you want to DELETE and REBUILD the database? (y/N): ").strip().lower()
+        return choice == "y"
+    except EOFError:
+        # If we can't read from stdin, keep the existing DB
+        print("ℹ️ Unable to read input - keeping existing database.")
+        return False
 
 
 def main():
