@@ -32,14 +32,17 @@ EMAIL_RE    = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 def is_strong_password(pw: str) -> bool:
     """
     Password policy for registration:
-      - At least 8 characters
-      - Must contain both letters and digits
+      - At least 12 characters
+      - At least 1 uppercase letter (A-Z)
+      - At least 1 lowercase letter (a-z)
+      - At least 1 special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
     """
-    if not pw or len(pw) < 8:
+    if not pw or len(pw) < 12:
         return False
-    has_letter = any(c.isalpha() for c in pw)
-    has_digit  = any(c.isdigit() for c in pw)
-    return has_letter and has_digit
+    has_upper = any(c.isupper() for c in pw)
+    has_lower = any(c.islower() for c in pw)
+    has_special = any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in pw)
+    return has_upper and has_lower and has_special
 
 def _checksum11(s: str) -> int:
     """
