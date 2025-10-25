@@ -46,7 +46,7 @@ jobs:
         run: |
           # Build and start Docker containers
           echo "🐳 Starting Docker containers..."
-          docker-compose up -d
+          docker compose up -d
           
           # Wait for services to be healthy
           echo "⏳ Waiting for services to be ready..."
@@ -66,11 +66,11 @@ jobs:
           # Show Docker logs for debugging if tests failed
           if [ ${TEST_RESULT:-0} -ne 0 ]; then
             echo "❌ Tests failed. Docker logs:"
-            docker-compose logs --tail=50
+            docker compose logs --tail=50
           fi
           
           # Cleanup
-          docker-compose down -v
+          docker compose down -v
           
           exit ${TEST_RESULT:-0}
 
