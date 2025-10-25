@@ -45,19 +45,13 @@ class HTTPTestRunner:
     - API endpoint testing
     """
 
-    def __init__(self, base_url: str = "http://localhost:5000"):
+    def __init__(self, base_url: str = "http://localhost"):
         self.base_url = base_url.rstrip('/')
         self.session = requests.Session()
 
         # Rate limiting protection - add delay between requests
         self.last_request_time = 0
         self.min_request_delay = 0.1  # 100ms between requests
-
-        # Test user credentials
-        self.test_users = {
-            'admin': {'username': 'admin', 'password': 'admin123'},
-            'voter': {'username': 'voter1', 'password': 'VoterSecurePass123!'}
-        }
 
     def _rate_limit_delay(self):
         """Add delay between requests to avoid rate limiting."""
