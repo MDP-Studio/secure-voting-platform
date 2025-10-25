@@ -60,7 +60,7 @@ jobs:
           sleep 3  # Wait for app to start
           
           # Run integration tests
-          python -m pytest tests/integration/test_integration.py::TestHealth -v --tb=short --base-url=http://localhost:5000
+          python -m pytest tests/integration/test_integration.py::TestHealthChecks -v --tb=short --base-url=http://localhost:5000
           
           # Kill the background app
           kill $APP_PID 2>/dev/null || true
