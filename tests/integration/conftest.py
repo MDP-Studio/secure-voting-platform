@@ -75,16 +75,31 @@ class HTTPTestRunner:
 
     def login(self, username: str, password: str) -> bool:
         """Attempt login and return success status."""
-        # First get login page to get CSRF token if needed
+        # First get login page to ensure we have proper session
         response = self.get('/login')
         if response.status_code != 200:
             return False
 
-        # For now, simple login (may need OTP handling)
+        # Fetch the login nonce (required for security unless in TESTING mode)
+        nonce_response = self.get('/login-nonce')
+        if nonce_response.status_code != 200:
+            # If nonce endpoint fails, still try login (might be in TESTING mode)
+            nonce = None
+        else:
+            try:
+                nonce = nonce_response.json().get('nonce')
+            except Exception:
+                nonce = None
+
+        # Build login form data
         login_data = {
             'username': username,
             'password': password
         }
+        
+        # Include nonce if available
+        if nonce:
+            login_data['login_nonce'] = nonce
 
         response = self.post('/login', data=login_data, allow_redirects=False)
 
