@@ -465,7 +465,8 @@ def register():
             flash("Passwords do not match")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
         
-        # Validate password strength using centralized validator
+        # Password validation has been centralized in validate_password_strength()
+        # (replacing is_strong_password()) to ensure consistent password policy enforcement.
         is_valid, error_message = validate_password_strength(password)
         if not is_valid:
             flash(f"Password too weak: {error_message}")
