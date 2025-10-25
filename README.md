@@ -2,6 +2,8 @@
 
 A secure online voting platform inspired by Australian electoral systems, featuring multi-factor authentication, geo-filtering, and comprehensive security measures.
 
+<!-- CI/CD Test Trigger -->
+
 ## Quick Links 🔗
 
 - **Basic Flask App Demo:** [http://localhost:5000](http://localhost:5000) (no WAF protection)
