@@ -247,12 +247,13 @@ class TestPasswordValidationIntegration:
     
     def test_registration_with_weak_password(self, client, app):
         """Test that registration fails with weak password."""
+        valid_license = _generate_valid_driver_license("DL12340")
         response = client.post('/register', data={
             'username': 'newuser',
             'email': 'newuser@test.com',
             'password': 'weak',
             'confirm': 'weak',
-            'driver_lic_no': 'DL123456',  # Invalid checksum but tests password
+            'driver_lic_no': valid_license,  # Valid driver license
             'driver_lic_state': 'NSW'
         }, follow_redirects=True)
         
@@ -263,12 +264,13 @@ class TestPasswordValidationIntegration:
     
     def test_registration_with_strong_password(self, client, app):
         """Test that registration succeeds with strong password."""
+        valid_license = _generate_valid_driver_license("DL12341")
         response = client.post('/register', data={
             'username': 'stronguser',
             'email': 'stronguser@test.com',
             'password': 'StrongPass@123',  # 12+ chars with uppercase, lowercase, special char, digit
             'confirm': 'StrongPass@123',
-            'driver_lic_no': 'DL123458',  # Valid checksum (8)
+            'driver_lic_no': valid_license,  # Programmatically generated valid license
             'driver_lic_state': 'NSW'
         }, follow_redirects=True)
         
