@@ -125,7 +125,7 @@ def generate_random_voter_data(index):
     return {
         "username": f"testvoter{index:03d}",  # testvoter001, testvoter002, etc.
         "email": f"{first_name.lower()}.{last_name.lower()}{index}@testvoters.com",
-        "password": "testpass123",  # Same password for all test users
+        "password": "TestPass@123!",  # Strong password for all test users (12+ chars, upper, lower, special)
         "full_name": f"{first_name} {last_name}",
         "date_of_birth": date(birth_year, birth_month, birth_day),
         "address_line1": street_address,
@@ -136,8 +136,8 @@ def generate_random_voter_data(index):
         "roll_number": f"ER-{1000 + index:04d}",  # ER-1001, ER-1002, etc.
     }
 
-# Generate 100 test voters
-TEST_VOTERS = [generate_random_voter_data(i + 1) for i in range(100)]
+# Generate 110 test voters for development seeding
+TEST_VOTERS = [generate_random_voter_data(i + 1) for i in range(110)]
 
 def get_test_voters():
     """Return the list of test voter data."""
