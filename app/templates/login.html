@@ -214,8 +214,10 @@
           <!-- Voter ID (or Email) -->
           <div class="mb-3">
             <label for="voter_id" class="form-label">Voter ID or Email</label>
-            <input type="text" class="form-control" id="voter_id" name="username" value="{{ prev_username or '' }}"
-       placeholder="e.g., VTR-1234 or name@domain.com" required />
+            <input type="text" class="form-control" id="voter_id" name="username" value="{{ prev_username or '' }}" placeholder="e.g., VTR-1234 or name@domain.com" required />
+
+            <!-- GOTCHA honeypot (hidden). Legit users/browsers won't fill this. -->
+            <input type="text" name="gotcha" id="gotcha_field" autocomplete="off" tabindex="-1" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" />
 
             <div class="invalid-feedback">Enter your Voter ID or Email.</div>
           </div>
@@ -240,6 +242,15 @@
             <button class="btn btn-outline-primary" type="button" id="btnGetOtp"><i class="fa-solid fa-message"></i> Get OTP</button>
             <div class="invalid-feedback">Enter a valid 6‑digit code.</div>
           </div>
+
+          <!-- Cloudflare Turnstile widget (optional) -->
+          {% if config.get('CF_TURNSTILE_SITEKEY') %}
+          <div class="mb-3">
+            <div class="cf-turnstile" data-sitekey="{{ config.get('CF_TURNSTILE_SITEKEY') }}"></div>
+          </div>
+          {% else %}
+          <!-- Turnstile not configured. Set CF_TURNSTILE_SITEKEY in config to enable. -->
+          {% endif %}
 
           <!-- Remember & Legal -->
           <div class="meta-row mb-3">
@@ -384,6 +395,28 @@
           return;
   }
 });
+      // Request a short-lived JS nonce and insert into the login form. This
+      // prevents naive curl/wget POSTs because the nonce is issued via JS.
+      (async function fetchLoginNonce() {
+        try {
+          const resp = await fetch('/login-nonce');
+          if (!resp.ok) return;
+          const j = await resp.json();
+          if (j && j.nonce) {
+            let input = document.querySelector('input[name="login_nonce"]');
+            if (!input) {
+              input = document.createElement('input');
+              input.type = 'hidden';
+              input.name = 'login_nonce';
+              document.getElementById('loginForm').appendChild(input);
+            }
+            input.value = j.nonce;
+          }
+        } catch (e) {
+          // silently ignore; server will enforce other checks
+          console.warn('Failed to fetch login nonce', e);
+        }
+      })();
     });
   </script>
 </body>

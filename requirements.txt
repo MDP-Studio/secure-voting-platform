@@ -9,4 +9,5 @@ geoip2>=4.6.0
 psutil==5.9.6
 PyJWT==2.8.0
 python-dotenv==1.0.0
+prometheus_client>=0.16.0
 cryptography==41.0.3

@@ -56,7 +56,7 @@ class HTTPTestRunner:
         # Test user credentials
         self.test_users = {
             'admin': {'username': 'admin', 'password': 'admin123'},
-            'voter': {'username': 'voter1', 'password': 'password123'}
+            'voter': {'username': 'voter1', 'password': 'VoterSecurePass123!'}
         }
 
     def _rate_limit_delay(self):

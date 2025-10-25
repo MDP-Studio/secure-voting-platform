@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, abort
+from flask import Blueprint, jsonify, render_template, redirect, url_for, flash, request, abort
 from flask_login import login_required, current_user
 from app import db
 from app.models import User, Candidate, Vote, Region
@@ -38,6 +38,12 @@ def user_is_eligible_to_vote(user):
 def index():
     """Landing redirects to login."""
     return redirect(url_for('auth.login'))
+
+
+@main.route('/healthz')
+def healthz():
+    """Basic health check endpoint for load balancers and monitoring."""
+    return jsonify(status="ok")
 
 
 @main.route('/dashboard')

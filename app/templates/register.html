@@ -116,9 +116,9 @@
                      id="password"
                      name="password"
                      required
-                     minlength="8"
-                     pattern="(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{8,}"
-                     title="At least 8 characters, including letters and digits"
+                     minlength="12"
+                     pattern="(?=.*[A-Z])(?=.*[a-z])(?=.*[!@#$%^&*()_+\-=\[\]{}|;:,.<>?])[A-Za-z\d!@#$%^&*()_+\-=\[\]{}|;:,.<>?]{12,}"
+                     title="At least 12 characters, including uppercase, lowercase, and special character (!@#$%^&*()_+-=[]{}|;:,.<>?)"
                      autocomplete="new-password">
             </div>
             <div class="col-md-6 mb-3">
