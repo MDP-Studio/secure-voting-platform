@@ -266,8 +266,11 @@ class TestWAFSecurityPenetration:
         for i in range(5):  # Brute force simulation
             try:
                 # POST to /vote endpoint (simulating automated vote stuffing)
-                # Will get 401/403 (not authenticated) but that's expected
-                # We're testing if rate limiting blocks the rapid requests
+                # Response depends on environment:
+                # - Testing mode: 200 (auth checks skipped, vote succeeds)
+                # - Production mode: 401/403 (anti-robot blocks auth, or auth required)
+                # - Rate limited: 429 (rate limiting activated)
+                # - WAF blocking: 403 (ModSecurity blocks payload) or 429
                 response = http_runner.post(
                     '/vote',
                     data={'candidate_id': '1'},  # Dummy vote data
@@ -278,16 +281,19 @@ class TestWAFSecurityPenetration:
                 voting_responses.append('error')
             time.sleep(0.2)  # Rapid requests to test rate limiting (less than 1 per second)
 
-        # Success = endpoint responds (200, 302, 401, 403, 429)
-        # We expect to see some 429 (Too Many Requests) as rate limit kicks in
-        # 401/403 means auth failed but endpoint was reached (good)
+        # Success = endpoint responds with any meaningful status (not error or gateway failure)
+        # We're testing endpoint accessibility and rate limiting, not authentication
+        # 200 = vote accepted (testing mode) or legitimate response
+        # 401/403 = auth failed but endpoint accessible (production mode)
+        # 429 = rate limiting active (proof of rate limit working!)
+        # error/503 = bad (connection error or gateway blocking)
         voting_success_count = sum(1 for r in voting_responses if r not in ['error', 503])
         voting_rate_limited = sum(1 for r in voting_responses if r == 429)
         
         print(f"Voting endpoint: {voting_success_count}/{len(voting_responses)} responses received")
         print(f"  Voting response codes: {voting_responses}")
         print(f"  Rate limited (429): {voting_rate_limited}")
-        print(f"  Note: 200 responses may indicate test mode skipping auth checks")
+        print(f"  Note: Production mode will show 401/403 due to anti-robot blocking auth")
 
         # Test 3: Dev endpoint should work (ModSecurity disabled for dev)
         dev_responses = []
