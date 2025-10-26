@@ -33,6 +33,14 @@ def create_app(test_config=None):
     flask_env = os.environ.get('FLASK_ENV', '').lower()
     is_testing = deployment_env == 'testing' or flask_env == 'testing'
     
+    # Log environment detection for debugging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔍 Environment Detection:")
+    logger.info(f"  DEPLOYMENT_ENV={deployment_env or '(not set)'}")
+    logger.info(f"  FLASK_ENV={flask_env or '(not set)'}")
+    logger.info(f"  → Testing Mode Enabled: {is_testing}")
+    
     app.config.from_mapping(
         SECRET_KEY=os.environ.get('SECRET_KEY', 'dev-secret'),
         SQLALCHEMY_DATABASE_URI= os.environ.get('DATABASE_URL') 

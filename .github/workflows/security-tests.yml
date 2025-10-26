@@ -51,6 +51,14 @@ jobs:
           export GEO_FILTER_ENABLED=False
           export ENABLE_MFA=False
           
+          # Log exported environment variables
+          echo "📋 Exported Environment Variables:"
+          echo "  DEPLOYMENT_ENV=$DEPLOYMENT_ENV"
+          echo "  FLASK_ENV=$FLASK_ENV"
+          echo "  SECRET_KEY=$SECRET_KEY"
+          echo "  GEO_FILTER_ENABLED=$GEO_FILTER_ENABLED"
+          echo "  ENABLE_MFA=$ENABLE_MFA"
+          
           echo "🐳 Starting Docker containers..."
           docker compose up -d
           
