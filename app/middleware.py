@@ -1,5 +1,5 @@
 
-from flask import request, abort, current_app
+from flask import request, abort, current_app, g
 from .geo_service import geoip_service
 import os
 import logging
@@ -36,3 +36,10 @@ def check_geo_ip():
     if not geoip_service.is_ip_allowed(user_ip):
         # If not allowed, stop the request and show a "Forbidden" error.
         abort(403)
+
+    # 5. Best-effort: attach detected AU state code to request context for downstream use (e.g., registration warning)
+    try:
+        g.geo_state = geoip_service.get_state_code(user_ip)
+    except Exception:
+        # Never break request if geo lookup fails
+        g.geo_state = None

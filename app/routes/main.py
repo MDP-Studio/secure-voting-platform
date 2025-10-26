@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, abort
+from flask import Blueprint, jsonify, render_template, redirect, url_for, flash, request, abort
 from flask_login import login_required, current_user
 from app import db
 from app.models import User, Candidate, Vote, Region
@@ -31,42 +31,94 @@ def user_is_eligible_to_vote(user):
         and enrol.verified
     )
 
-# ----- routes -----
+# -----------------------------
+# Routes
+# -----------------------------
 @main.route('/')
 def index():
+    """Landing redirects to login."""
     return redirect(url_for('auth.login'))
+
+
+@main.route('/healthz')
+def healthz():
+    """Basic health check endpoint for load balancers and monitoring."""
+    return jsonify(status="ok")
+
 
 @main.route('/dashboard')
 @login_required
 def dashboard():
-    candidates = Candidate.query.all()
-    return render_template('dashboard.html',
-                           candidates=candidates,
-                           user=current_user)
+    """
+    Dashboard shows candidates and eligibility messages.
+    Template can use `eligible` to enable/disable vote UI.
+    """
+    candidates = Candidate.query.order_by(Candidate.name.asc()).all()
+    eligible = user_is_eligible_to_vote(current_user)
+
+    # Friendly hints for common non-eligible states (optional).
+    # Keep flashes concise and specific; the template already shows a comprehensive
+    # eligibility block, so avoid duplicating the generic "not eligible" message.
+    if not getattr(current_user, "is_approved", False):
+        flash("Your account is pending admin approval.")
+    elif getattr(current_user, "enrolment", None) is None:
+        flash("No enrolment found. Please contact support.")
+    else:
+        # Only surface very specific roll problems as flashes (status or verification)
+        if current_user.enrolment.status != "active":
+            flash(f"Electoral roll status: {current_user.enrolment.status} (requires active).")
+        if not current_user.enrolment.verified:
+            flash("Your electoral roll entry is not yet verified.")
+
+    return render_template(
+        'dashboard.html',
+        candidates=candidates,
+        user=current_user,
+        eligible=eligible
+    )
+
 
 @main.route("/delegate")
-@roles_required("delegate", "manager")
-@login_required
+@roles_required("delegate", "manager")  # roles_required already wraps login_required
 def delegate_dashboard():
-    # if you want to restrict delegates to their own region, set delegate_region accordingly
-    delegate_region = getattr(current_user.enrolment, "region", None) if hasattr(current_user, "enrolment") else None
+    """
+    Delegates see candidates (optionally restricted to their region).
+    Managers see all candidates.
+    """
+    delegate_region = getattr(getattr(current_user, "enrolment", None), "region", None)
 
-    # show candidates: either all (for manager) or only delegate's region
-    if current_user.is_manager or not delegate_region:
+    if getattr(current_user, "is_manager", False) or not delegate_region:
         candidates = Candidate.query.order_by(Candidate.name.asc()).all()
     else:
-        candidates = Candidate.query.filter_by(region_id=delegate_region.id).order_by(Candidate.name.asc()).all()
+        candidates = (
+            Candidate.query
+            .filter_by(region_id=delegate_region.id)
+            .order_by(Candidate.name.asc())
+            .all()
+        )
 
     regions = Region.query.order_by(Region.name.asc()).all()
-    return render_template("delegates_dashboard.html",
-                           candidates=candidates,
-                           regions=regions,
-                           delegate_region=delegate_region)
+    return render_template(
+        "delegates_dashboard.html",
+        candidates=candidates,
+        regions=regions,
+        delegate_region=delegate_region
+    )
+
 
 @main.route('/vote', methods=['POST'])
 @login_required
 def vote():
-    # check if already voted first
+    """
+    Records a single vote per user.
+    - Enforces admin approval and eligibility.
+    - Enforces one vote per user via DB unique constraint on Vote.user_id.
+    """
+    # Explicit approval gate (clear message)
+    if not getattr(current_user, "is_approved", False):
+        flash("Your account is pending admin approval.")
+        return redirect(url_for("main.dashboard"))
+
     if current_user.has_voted:
         flash("You have already voted.")
         return redirect(url_for("main.dashboard"))

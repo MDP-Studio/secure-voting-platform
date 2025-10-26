@@ -7,6 +7,7 @@ A secure online voting platform inspired by Australian electoral systems, featur
 - **Basic Flask App Demo:** [http://localhost:5000](http://localhost:5000) (no WAF protection)
 - **WAF Protected:** [http://localhost](http://localhost) (with nginx + ModSecurity)
 - **Test Documentation:** [tests/README.md](tests/README.md)
+- **Password Policy:** [docs/PASSWORD_POLICY.md](docs/PASSWORD_POLICY.md)
 - **WAF Demo Tool:** `/tests/test_waf_demo.py`
 - **Testing Section:** [Jump to Testing](#testing)
 
@@ -27,10 +28,22 @@ A secure online voting platform inspired by Australian electoral systems, featur
 
 3. **Access:** `http://localhost:5000`
 
-**Credentials:**
- - Manager: admin / admin123
- - Delegate: delegate1 / delegate123
- - Voter: voter1 / password123
+**Default Credentials:**
+ - Manager: admin / Admin@123456!
+ - Delegate: delegate1 / Delegate@123!
+ - Voter: voter1 / Password@123!
+
+**Note:** All passwords must meet strong password requirements:
+- Minimum 12 characters
+- At least 1 uppercase letter (A-Z)
+- At least 1 lowercase letter (a-z)
+- At least 1 special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
+
+**Security Features:**
+- 🔒 Account lockout after 5 failed login attempts (30 min lockout)
+- ⏰ Password expiration after 90 days
+- 🔑 Secure password change functionality
+- 📋 See [Password Policy Documentation](docs/PASSWORD_POLICY.md) for details
 
 ## Scripts
 
@@ -180,5 +193,41 @@ docker-compose down
 docker volume rm sec-soft-sys-a3_db_data
 docker-compose up -d
 ```
+
+## HashiCorp Vault (optional, recommended)
+
+This app can use Vault for two purposes:
+- Transit engine for signing/verifying election results (private keys never leave Vault)
+- KV v2 for storing the JWT secret
+
+Environment variables:
+- `VAULT_ADDR`, `VAULT_TOKEN`
+- `VAULT_MOUNT` (default: `transit`), `VAULT_TRANSIT_KEY` (default: `results-signing`)
+- `VAULT_KV_MOUNT` (default: `kv`), `VAULT_JWT_PATH` (default: `app/jwt`), `VAULT_JWT_KEY` (default: `secret`)
+
+Provisioning helper:
+
+```bash
+export VAULT_ADDR=http://127.0.0.1:8200
+export VAULT_TOKEN=xxxx
+export JWT_SECRET_VALUE=$(openssl rand -hex 32)
+bash scripts/provision_vault.sh
+```
+
+Suggested policy (attach to the app token):
+
+```hcl
+path "transit/sign/results-signing" {
+  capabilities = ["update"]
+}
+path "transit/verify/results-signing" {
+  capabilities = ["update"]
+}
+path "kv/data/app/jwt" {
+  capabilities = ["read"]
+}
+```
+
+If Vault is not configured, the app falls back to local RSA keys under the Flask instance folder for result signing and to `SECRET_KEY` env var for JWT.
 
 This will delete all existing data and start with a fresh database.

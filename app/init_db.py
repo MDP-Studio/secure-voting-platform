@@ -2,7 +2,17 @@
 import os
 from datetime import datetime, date
 from app import db
-from app.models import User, Role, Region, Candidate, ElectoralRoll
+from app.models import (
+    User,
+    Role,
+    Region,
+    Candidate,
+    ElectoralRoll,
+)
+
+# -------------------------------------------------------------------
+# Utilities
+# -------------------------------------------------------------------
 
 # Import test voter data (optional)
 try:
@@ -15,6 +25,9 @@ except ImportError:
 
 # small helper so we don't duplicate rows
 def get_or_create(model, defaults=None, **kwargs):
+    """
+    Simple get-or-create helper to avoid duplicate seed rows.
+    """
     obj = model.query.filter_by(**kwargs).first()
     if obj:
         return obj, False
@@ -24,99 +37,184 @@ def get_or_create(model, defaults=None, **kwargs):
     return obj, True
 
 
+def _checksum11(body: str) -> int:
+    """
+    Same checksum scheme as registration validation:
+      - Map digits 0-9 -> 0..9
+      - Map letters A-Z -> 10..35
+      - Sum(value * position) for each char (1-based), then % 11
+      - Check char: 'X' if checksum == 10 else the digit (0-9)
+    """
+    val = 0
+    for i, ch in enumerate(body, start=1):
+        if ch.isdigit():
+            v = ord(ch) - 48
+        else:
+            v = 10 + (ord(ch.upper()) - 65)
+        val += v * i
+    return val % 11
+
+
+def make_lic(body: str) -> str:
+    """
+    Build a valid licence number from the given body (5-9 alnum is recommended).
+    Ensures final string length is 6..10 and last char is a valid check char.
+    """
+    body = "".join(ch for ch in body.strip().replace(" ", "") if ch.isalnum())
+    if not (5 <= len(body) <= 9):
+        body = "VIC001"
+    chk = _checksum11(body)
+    return body + ("X" if chk == 10 else str(chk))
+
+
+# -------------------------------------------------------------------
+# Seeding
+# -------------------------------------------------------------------
 def init_database(app):
+    """
+    Create tables and seed baseline data for local development/demo:
+      - Roles: voter/delegate/manager
+      - Regions
+      - Users: admin (manager), delegate1 (delegate), voter1 (voter), lix (voter)
+      - Electoral roll for voter1 (active + verified in Sydney)
+      - Test voters (110 fake voters for development)
+      - Candidates in Sydney
+    All seeded users are set to `approved` to simplify local testing.
+    """
     with app.app_context():
+        # 1) create tables
         try:
-            # 1) create tables
             db.create_all()
         except Exception as e:
             print(f"❌ Failed to create database tables: {e}")
-            print("💡 This might be due to a database schema mismatch.")
-            print("   If you're running in Docker with a persistent database,")
-            print("   you may need to reset the database or run migrations.")
-            print("   For development: delete the database volume/file and restart.")
+            print("💡 This may be a schema mismatch. Reset the DB or run migrations.")
             raise
 
+        # 2) seed roles + regions
         try:
-            # 2) seed roles
             for name, desc in [
                 ("voter", "Can cast one vote"),
                 ("delegate", "Manages candidates, cannot vote"),
                 ("manager", "System admin, cannot vote"),
             ]:
-                get_or_create(Role, description=desc, name=name)
+                get_or_create(Role, name=name, defaults={"description": desc})
 
-            # 3) seed regions
             for rname in ["Sydney", "VIC east", "VIC west", "NSW", "SA"]:
                 get_or_create(Region, name=rname)
 
             db.session.flush()  # ensure IDs exist for FKs
         except Exception as e:
-            print(f"❌ Failed to seed roles and regions: {e}")
+            print(f"❌ Failed to seed roles/regions: {e}")
             db.session.rollback()
             raise
 
-        try:
-            # quick lookups
-            voter_role = Role.query.filter_by(name="voter").first()
-            delegate_role = Role.query.filter_by(name="delegate").first()
-            manager_role = Role.query.filter_by(name="manager").first()
-            sydney = Region.query.filter_by(name="Sydney").first()
+        # Quick lookups
+        voter_role = Role.query.filter_by(name="voter").first()
+        delegate_role = Role.query.filter_by(name="delegate").first()
+        manager_role = Role.query.filter_by(name="manager").first()
+        sydney = Region.query.filter_by(name="Sydney").first()
+        vic_east = Region.query.filter_by(name="VIC east").first()
 
-            # 4) users (NOTE: __tablename__ for User should be "user")
-            if not User.query.filter_by(username="admin").first():
+        # 3) seed users (set account_status=approved)
+        try:
+            # --- admin (manager) ---
+            admin = User.query.filter_by(username="admin").first()
+            if not admin:
                 admin = User(
                     username="admin",
                     email="secsoftsysa3@myyahoo.com",
-                    role=manager_role,
+                    driver_lic_no=make_lic("ADMIN01"),
+                    driver_lic_state="VIC",
                     has_voted=False,
                     created_at=datetime.utcnow(),
+                    account_status="approved",
                 )
-                admin.set_password("admin123")
+                admin.role = manager_role
+                admin.set_password("Admin@123456!")  # Meet password policy requirements
                 db.session.add(admin)
             else:
-                admin = User.query.filter_by(username="admin").first()
+                # ensure important fields are present/consistent
                 admin.email = "secsoftsysa3@myyahoo.com"
+                admin.driver_lic_no = admin.driver_lic_no or make_lic("ADMIN01")
+                admin.driver_lic_state = admin.driver_lic_state or "VIC"
+                if not admin.role:
+                    admin.role = manager_role
+                if not admin.account_status:
+                    admin.account_status = "approved"
 
-            if not User.query.filter_by(username="delegate1").first():
+            # --- delegate1 (delegate) ---
+            delegate1 = User.query.filter_by(username="delegate1").first()
+            if not delegate1:
                 delegate1 = User(
                     username="delegate1",
                     email="delegate1@voting.com",
-                    role=delegate_role,
+                    driver_lic_no=make_lic("DELEG01"),
+                    driver_lic_state="NSW",
                     has_voted=False,
                     created_at=datetime.utcnow(),
+                    account_status="approved",
                 )
-                delegate1.set_password("delegate123")
+                delegate1.role = delegate_role
+                delegate1.set_password("Delegate@123!")
                 db.session.add(delegate1)
+            else:
+                delegate1.driver_lic_no = delegate1.driver_lic_no or make_lic("DELEG01")
+                delegate1.driver_lic_state = delegate1.driver_lic_state or "NSW"
+                if not delegate1.role:
+                    delegate1.role = delegate_role
+                if not delegate1.account_status:
+                    delegate1.account_status = "approved"
 
-            if not User.query.filter_by(username="voter1").first():
+            # --- voter1 (voter) ---
+            voter1 = User.query.filter_by(username="voter1").first()
+            if not voter1:
                 voter1 = User(
                     username="voter1",
                     email="voter1@voting.com",
-                    role=voter_role,
+                    driver_lic_no=make_lic("VOTER01"),
+                    driver_lic_state="NSW",
                     has_voted=False,
                     created_at=datetime.utcnow(),
+                    account_status="approved",
                 )
-                voter1.set_password("password123")
+                voter1.role = voter_role
+                voter1.set_password("Password@123!")
                 db.session.add(voter1)
+            else:
+                voter1.driver_lic_no = voter1.driver_lic_no or make_lic("VOTER01")
+                voter1.driver_lic_state = voter1.driver_lic_state or "NSW"
+                if not voter1.role:
+                    voter1.role = voter_role
+                if not voter1.account_status:
+                    voter1.account_status = "approved"
 
-            if not User.query.filter_by(username='lix').first():
+            # --- lix (voter) ---
+            lix = User.query.filter_by(username="lix").first()
+            if not lix:
                 lix = User(
-                    username='lix',
-                    email='2508027683@qq.com',
-                    role=voter_role,
+                    username="lix",
+                    email="2508027683@qq.com",
+                    driver_lic_no=make_lic("LIX0001"),
+                    driver_lic_state="VIC",
                     has_voted=False,
                     created_at=datetime.utcnow(),
+                    account_status="approved",
                 )
-                lix.set_password('password123')
+                lix.role = voter_role
+                lix.set_password("Password@123!")
                 db.session.add(lix)
-        
-            # add your own user here
+            else:
+                lix.driver_lic_no = lix.driver_lic_no or make_lic("LIX0001")
+                lix.driver_lic_state = lix.driver_lic_state or "VIC"
+                if not lix.role:
+                    lix.role = voter_role
+                if not lix.account_status:
+                    lix.account_status = "approved"
 
-            # Create test voters if enabled via environment variable
-            create_test_voters = os.environ.get('CREATE_TEST_VOTERS', 'false').lower() == 'true'
+            # Create 110 test voters for development (always enabled for local dev)
+            create_test_voters = os.environ.get('CREATE_TEST_VOTERS', 'true').lower() == 'true'
             if create_test_voters and TEST_VOTERS_AVAILABLE:
-                print("🧪 Creating 100 test voters for testing purposes...")
+                print("🧪 Creating 110 test voters for development purposes...")
                 test_voters_data = get_test_voters()
                 created_count = 0
                 
@@ -126,9 +224,12 @@ def init_database(app):
                         test_user = User(
                             username=voter_data['username'],
                             email=voter_data['email'],
+                            driver_lic_no=voter_data['driver_license_number'],
+                            driver_lic_state=voter_data['state'],
                             role=voter_role,
                             has_voted=False,
                             created_at=datetime.utcnow(),
+                            account_status="approved",
                         )
                         test_user.set_password(voter_data['password'])
                         db.session.add(test_user)
@@ -145,7 +246,7 @@ def init_database(app):
             voter1 = User.query.filter_by(username="voter1").first()  # refresh to ensure id
         except Exception as e:
             print(f"❌ Failed to create users: {e}")
-            print("💡 This might indicate a schema mismatch in the User or Role tables.")
+            print("💡 Check User/Role schema. If mismatched, reset DB and re-run.")
             db.session.rollback()
             raise
 
@@ -154,7 +255,7 @@ def init_database(app):
             if voter1 and not ElectoralRoll.query.filter_by(user_id=voter1.id).first():
                 er = ElectoralRoll(
                     roll_number="ER-0001",
-                    driver_license_number="DL12345678",
+                    driver_license_number=voter1.driver_lic_no,  # keep consistent
                     full_name="Voter One",
                     date_of_birth=date(1990, 5, 10),
                     address_line1="1 King St",
@@ -217,6 +318,7 @@ def init_database(app):
             if Candidate.query.count() == 0:
                 db.session.add_all(
                     [
+                        #Sydney candidates
                         Candidate(
                             name="John Smith",
                             party="Labor Party",
@@ -235,6 +337,25 @@ def init_database(app):
                             position="House of Representatives",
                             region_id=sydney.id,
                         ),
+                        #VIC east candidates
+                        Candidate(
+                            name="Edward Green",
+                            party="Labor Party",
+                            position="House of Representatives",
+                            region_id=vic_east.id,
+                        ),
+                        Candidate(
+                            name="Alice White",
+                            party="Liberal Party",
+                            position="House of Representatives",
+                            region_id=vic_east.id,
+                        ),
+                        Candidate(
+                            name="Tom Black",
+                            party="Greens",
+                            position="House of Representatives",
+                            region_id=vic_east.id,
+                        ),
                     ]
                 )
         except Exception as e:
@@ -245,6 +366,7 @@ def init_database(app):
             db.session.rollback()
             raise
 
+        # 6) commit
         try:
             db.session.commit()
         except Exception as e:
@@ -254,13 +376,15 @@ def init_database(app):
 
         print(" 🧀✅ Database initialized")
         print(" 🧑‍💻 Logins you can use:")
-        print("  manager  → admin / admin123")
-        print("  delegate → delegate1 / delegate123")
-        print("  voter    → voter1 / password123")
+        print("  manager  → admin / Admin@123456!")
+        print("  delegate → delegate1 / Delegate@123!")
+        print("  voter    → voter1 / Password@123!")
+        print("  voter    → lix / Password@123!")
+        print(f" 🗳️  Plus {len(get_test_voters()) if TEST_VOTERS_AVAILABLE else 0} test voters: testvoter001-{len(get_test_voters()) if TEST_VOTERS_AVAILABLE else 0:03d} / TestPass@123!")
 
 
 if __name__ == "__main__":
+    # Allow running this file directly for quick manual seeding
     from app import create_app
-
     app = create_app()
     init_database(app)

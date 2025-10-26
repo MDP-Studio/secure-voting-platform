@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import current_user
 from app import db
 from app.models import User, Role
+from app.security.password_validator import validate_password_strength, PasswordValidationError
 
 registration = Blueprint('registration', __name__)
 
@@ -20,6 +21,12 @@ def register():
             flash('All fields are required')
             return redirect(url_for('registration.register'))
 
+        # Validate password strength
+        is_valid, error_message = validate_password_strength(password)
+        if not is_valid:
+            flash(f'Password validation failed: {error_message}', 'error')
+            return redirect(url_for('registration.register'))
+
         # check if username/email already exists
         if User.query.filter_by(username=username).first():
             flash('Username already taken')
@@ -35,16 +42,25 @@ def register():
             return redirect(url_for('registration.register'))
 
         # create user
-        user = User()
-        user.username = username
-        user.email = email
-        user.role_id = voter_role.id
-        user.set_password(password)
+        try:
+            user = User()
+            user.username = username
+            user.email = email
+            user.role_id = voter_role.id
+            user.set_password(password)
 
-        db.session.add(user)
-        db.session.commit()
+            db.session.add(user)
+            db.session.commit()
 
-        flash("Registration successful. Please log in.")
-        return redirect(url_for('auth.login'))
+            flash("Registration successful. Please log in.")
+            return redirect(url_for('auth.login'))
+        except PasswordValidationError as e:
+            flash(f'Password validation failed: {str(e)}', 'error')
+            db.session.rollback()
+            return redirect(url_for('registration.register'))
+        except Exception as e:
+            flash(f'Registration failed: {str(e)}', 'error')
+            db.session.rollback()
+            return redirect(url_for('registration.register'))
 
     return render_template('register.html')
