@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: ['**']
 
+env:
+  DEPLOYMENT_ENV: testing
+  FLASK_ENV: testing
+  SECRET_KEY: test-secret-key-do-not-use-in-production
+  GEO_FILTER_ENABLED: "False"
+  ENABLE_MFA: "False"
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -27,32 +34,14 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Run Smoke Tests
-        env:
-          DEPLOYMENT_ENV: testing
-          FLASK_ENV: testing
-          SECRET_KEY: test-secret-key-do-not-use-in-production
-          GEO_FILTER_ENABLED: "False"
-          ENABLE_MFA: "False"
         run: |
           python -m pytest tests/test_smoke.py -v --tb=short
 
       - name: Run Unit Tests
-        env:
-          DEPLOYMENT_ENV: testing
-          FLASK_ENV: testing
-          SECRET_KEY: test-secret-key-do-not-use-in-production
-          GEO_FILTER_ENABLED: "False"
-          ENABLE_MFA: "False"
         run: |
           python -m pytest tests/test_password_validation.py tests/test_password_policy.py -v --tb=short
 
       - name: Run Integration Tests (Docker)
-        env:
-          DEPLOYMENT_ENV: testing
-          FLASK_ENV: testing
-          SECRET_KEY: test-secret-key-do-not-use-in-production
-          GEO_FILTER_ENABLED: "False"
-          ENABLE_MFA: "False"
         run: |
           # Build and start Docker containers
           echo "🐳 Starting Docker containers..."
