@@ -55,8 +55,18 @@ def dashboard():
     Dashboard shows candidates and eligibility messages.
     Template can use `eligible` to enable/disable vote UI.
     """
-    candidates = Candidate.query.order_by(Candidate.name.asc()).all()
+    # Show region-appropriate candidates for voters; show all for non-voters
     eligible = user_is_eligible_to_vote(current_user)
+    enrol = getattr(current_user, "enrolment", None)
+    if eligible and enrol is not None:
+        candidates = (
+            Candidate.query
+            .filter(Candidate.region_id == enrol.region_id)
+            .order_by(Candidate.name.asc())
+            .all()
+        )
+    else:
+        candidates = Candidate.query.order_by(Candidate.name.asc()).all()
 
     # Friendly hints for common non-eligible states (optional).
     # Keep flashes concise and specific; the template already shows a comprehensive
@@ -183,6 +193,9 @@ def vote():
     # Use a single atomic transaction via service: insert Ballot then Attendance
     try:
         cast_anonymous_vote(db, current_user, candidate)
+        # Persist changes immediately so the redirected dashboard reflects
+        # the updated has_voted flag and the ballot/attendance rows exist.
+        db.session.commit()
     except IntegrityError:
         # Unique(election_id, voter_key) enforces one vote per person per election
         db.session.rollback()
