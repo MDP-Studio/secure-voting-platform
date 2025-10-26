@@ -33,6 +33,13 @@ def create_app(test_config=None):
     flask_env = os.environ.get('FLASK_ENV', '').lower()
     is_testing = deployment_env == 'testing' or flask_env == 'testing'
     
+    # Log testing mode for debugging
+    logging.info(f"🧪 DEPLOYMENT_ENV={deployment_env}, FLASK_ENV={flask_env}, TESTING={is_testing}")
+    if is_testing:
+        logging.info("✅ Testing mode ENABLED - security checks disabled")
+    else:
+        logging.info("🔒 Production mode - security checks enabled")
+    
     # Log environment detection for debugging
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)

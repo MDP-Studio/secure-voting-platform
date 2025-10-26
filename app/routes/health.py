@@ -2,7 +2,7 @@
 Health check routes for monitoring and load balancer checks.
 """
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, current_app
 from app import db
 
 health = Blueprint('health', __name__, url_prefix='/health')
@@ -18,7 +18,14 @@ def readiness():
     try:
         # Check database connectivity
         db.session.execute(db.text('SELECT 1'))
-        return jsonify(status="ready", database="connected")
+        testing_mode = current_app.config.get('TESTING', False)
+        mode_str = "🧪 TESTING" if testing_mode else "🔒 PRODUCTION"
+        return jsonify(
+            status="ready", 
+            database="connected",
+            mode=mode_str,
+            testing=testing_mode
+        )
     except Exception as e:
         return jsonify(status="not ready", database="disconnected", error=str(e)), 503
 
