@@ -26,19 +26,23 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Set up environment variables (SQLite for testing)
-        run: |
-          echo "DEPLOYMENT_ENV=testing" >> $GITHUB_ENV
-          echo "FLASK_ENV=testing" >> $GITHUB_ENV
-          echo "SECRET_KEY=test-secret-key-do-not-use-in-production" >> $GITHUB_ENV
-          echo "GEO_FILTER_ENABLED=False" >> $GITHUB_ENV
-          echo "ENABLE_MFA=False" >> $GITHUB_ENV
-
       - name: Run Smoke Tests
+        env:
+          DEPLOYMENT_ENV: testing
+          FLASK_ENV: testing
+          SECRET_KEY: test-secret-key-do-not-use-in-production
+          GEO_FILTER_ENABLED: "False"
+          ENABLE_MFA: "False"
         run: |
           python -m pytest tests/test_smoke.py -v --tb=short
 
       - name: Run Unit Tests
+        env:
+          DEPLOYMENT_ENV: testing
+          FLASK_ENV: testing
+          SECRET_KEY: test-secret-key-do-not-use-in-production
+          GEO_FILTER_ENABLED: "False"
+          ENABLE_MFA: "False"
         run: |
           python -m pytest tests/test_password_validation.py tests/test_password_policy.py -v --tb=short
 

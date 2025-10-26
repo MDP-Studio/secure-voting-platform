@@ -29,14 +29,6 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Set up environment variables (Testing mode)
-        run: |
-          echo "DEPLOYMENT_ENV=testing" >> $GITHUB_ENV
-          echo "FLASK_ENV=testing" >> $GITHUB_ENV
-          echo "SECRET_KEY=test-secret-key-do-not-use-in-production" >> $GITHUB_ENV
-          echo "GEO_FILTER_ENABLED=False" >> $GITHUB_ENV
-          echo "ENABLE_MFA=False" >> $GITHUB_ENV
-
       - name: Build and start Docker containers
         env:
           DEPLOYMENT_ENV: testing
@@ -104,21 +96,45 @@ jobs:
           sleep 2
 
       - name: Run health checks
+        env:
+          DEPLOYMENT_ENV: testing
+          FLASK_ENV: testing
+          SECRET_KEY: test-secret-key-do-not-use-in-production
+          GEO_FILTER_ENABLED: "False"
+          ENABLE_MFA: "False"
         run: |
           echo "🏥 Running health checks..."
           python -m pytest tests/integration/test_integration.py::TestHealthChecks -v --tb=short --base-url=http://localhost
 
       - name: Run WAF Security Tests
+        env:
+          DEPLOYMENT_ENV: testing
+          FLASK_ENV: testing
+          SECRET_KEY: test-secret-key-do-not-use-in-production
+          GEO_FILTER_ENABLED: "False"
+          ENABLE_MFA: "False"
         run: |
           echo "🛡️ Running WAF security tests..."
           python -m pytest tests/integration/test_waf_security.py -v --tb=short --base-url=http://localhost
 
       - name: Run Rate Limiting Tests
+        env:
+          DEPLOYMENT_ENV: testing
+          FLASK_ENV: testing
+          SECRET_KEY: test-secret-key-do-not-use-in-production
+          GEO_FILTER_ENABLED: "False"
+          ENABLE_MFA: "False"
         run: |
           echo "⚡ Running rate limiting tests..."
           python -m pytest tests/test_vote_rate_limiting.py -v --tb=short
 
       - name: Run Pagination Security Tests
+        env:
+          DEPLOYMENT_ENV: testing
+          FLASK_ENV: testing
+          SECRET_KEY: test-secret-key-do-not-use-in-production
+          GEO_FILTER_ENABLED: "False"
+          ENABLE_MFA: "False"
         run: |
           echo "📄 Running pagination security tests..."
           python -m pytest tests/test_pagination_security.py -v --tb=short
