@@ -12,6 +12,7 @@ https://github.com/colinwirt/sec-soft-sys-a3/issues
 2. Encryption of voter name and address to protect PII in the electoral roll 
 encrypt DB field contents 
 
+https://github.com/colinwirt/sec-soft-sys-a3/issues/53
 
 3. The encrypted and sign HMAC audit log (outside the DBMS such as an audit.log file) should record all voting transactions,
 with a timestamp of nanoseconds, be kept for 10 years, and be verified by the annual legal audit. 

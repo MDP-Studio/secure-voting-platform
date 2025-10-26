@@ -471,7 +471,10 @@ def register():
         if not validate_driver_lic(lic_no, lic_state or None):
             flash("Invalid driver licence number")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
-        if User.query.filter_by(driver_lic_no=lic_no).first():
+        # Uniqueness check via deterministic hash (since licence is stored encrypted)
+        from app.models import _hash_lic
+        lic_hash = _hash_lic(lic_no)
+        if lic_hash and User.query.filter_by(driver_lic_hash=lic_hash).first():
             flash("Driver licence already bound to another account")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
@@ -492,6 +495,11 @@ def register():
             has_voted=False,
             account_status="pending",  # waiting for admin approval
         )
+        # Ensure hash is set (event listeners will also do this, but set eagerly for safety)
+        try:
+            user.driver_lic_hash = lic_hash or _hash_lic(lic_no)
+        except Exception:
+            user.driver_lic_hash = _hash_lic(lic_no)
         user.set_password(password)
         db.session.add(user)
         db.session.flush()  # need user.id for roll
