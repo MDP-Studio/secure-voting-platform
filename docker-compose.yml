@@ -1,8 +1,6 @@
 services:
   web:
-    build:
-      context: .
-      dockerfile: app/Dockerfile
+    build: ./app
     container_name: voting_web
     ports:
       # 8000 is mapped for direct access (bypass WAF)
