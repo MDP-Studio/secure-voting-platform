@@ -38,14 +38,14 @@ jobs:
           echo "ENABLE_MFA=False" >> $GITHUB_ENV
 
       - name: Build and start Docker containers
+        env:
+          DEPLOYMENT_ENV: testing
+          FLASK_ENV: testing
+          SECRET_KEY: test-secret-key-do-not-use-in-production
+          GEO_FILTER_ENABLED: "False"
+          ENABLE_MFA: "False"
         run: |
           echo "🐳 Starting Docker containers..."
-          # Pass testing environment variables to Docker containers
-          export DEPLOYMENT_ENV=testing
-          export FLASK_ENV=testing
-          export SECRET_KEY=test-secret-key-do-not-use-in-production
-          export GEO_FILTER_ENABLED=False
-          export ENABLE_MFA=False
           docker compose up -d
           
           # Wait for database to be healthy first
