@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import types
 from flask import Flask, g, request, current_app
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
@@ -104,9 +105,14 @@ def create_app(test_config=None):
     if test_config:
         app.config.update(test_config)
 
-    # In test mode, avoid external DB connections: disable binds
+    # In test mode, avoid external DB connections; point binds to the default URI
+    # so the extension has engines for any bind keys encountered.
     if app.config.get('TESTING'):
-        app.config['SQLALCHEMY_BINDS'] = {}
+        default_uri = app.config.get('SQLALCHEMY_DATABASE_URI')
+        app.config['SQLALCHEMY_BINDS'] = {
+            'admin': default_uri,
+            'voters': default_uri,
+        }
 
     # ensure instance folder exists
     try:
@@ -207,11 +213,55 @@ def create_app(test_config=None):
             # On any error, do not block the request; fall back to default
             g._active_bind = None
 
-    # create database tables if they don't exist (for all binds)
+    # create database tables if they don't exist (Flask-SQLAlchemy will
+    # handle creating tables for the default and any configured binds)
     with app.app_context():
+        # In testing, disable Vote.__bind_key__ so Vote shares the default metadata
+        if app.config.get('TESTING'):
+            os.environ['DISABLE_VOTE_BIND'] = '1'
         from app import models  # noqa: F401
-        # Create tables across default and configured binds
-        db.create_all()
+        # In testing, collapse all per-bind tables into the default metadata
+        # so foreign keys resolve within a single SQLite database. Let tests
+        # call db.create_all() themselves (tests/conftest.py already does this)
+        # to avoid duplicate DDL and to ensure their engine/URI is used.
+        if app.config.get('TESTING'):
+            try:
+                # 1) Remove bind_key markers from tables on the default metadata
+                for tbl in list(db.metadata.tables.values()):
+                    tbl.info.pop('bind_key', None)
+
+                # 2) Move any tables that were created on per-bind metadatas
+                #    into the default metadata (should be none after disabling
+                #    Vote bind, but keep for safety)
+                for key, meta in list(db.metadatas.items()):
+                    if key is None:
+                        continue
+                    for t in list(meta.tables.values()):
+                        if t.key not in db.metadata.tables:
+                            t.tometadata(db.metadata)
+                    meta.tables.clear()
+
+                # 3) Replace the extension's metadatas registry with only the default
+                try:
+                    db.metadatas.clear()
+                    db.metadatas[None] = db.metadata
+                except Exception:
+                    pass
+
+                # 4) Monkey-patch create_all to operate only on the default
+                #    metadata/engine in testing to avoid extension bind logic.
+                def _testing_call_for_binds(self, bind_key, op_name: str):
+                    getattr(self.metadata, op_name)(bind=self.engine)
+                db._call_for_binds = types.MethodType(_testing_call_for_binds, db)
+            except Exception:
+                pass
+        else:
+            # Avoid implicit schema creation unless explicitly requested.
+            # This prevents accidental external DB connections when modules/tests
+            # import the app without providing TESTING config early enough.
+            auto_create = str(os.environ.get('AUTO_CREATE_ALL', '0')).lower() in ('1','true','yes')
+            if auto_create:
+                db.create_all()
 
     # NOTE: older code paths may expect a Flask-Login user; we enhance request
     # processing by checking for a JWT session_token cookie and loading the

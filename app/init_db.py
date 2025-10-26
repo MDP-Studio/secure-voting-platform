@@ -85,7 +85,7 @@ def init_database(app):
     with app.app_context():
         # 1) create tables
         try:
-                        db.create_all()
+            db.create_all()
         except Exception as e:
             print(f"❌ Failed to create database tables: {e}")
             print("💡 This may be a schema mismatch. Reset the DB or run migrations.")
@@ -213,7 +213,6 @@ def init_database(app):
                     lix.account_status = "approved"
 
             # Create 110 test voters for development (always enabled for local dev)
-            create_test_voters = os.environ.get('CREATE_TEST_VOTERS', 'true').lower() == 'true'
             create_test_voters = os.environ.get('CREATE_TEST_VOTERS', 'true').lower() == 'true'
             is_testing_env = app.config.get('TESTING', False)
             if create_test_voters and TEST_VOTERS_AVAILABLE:

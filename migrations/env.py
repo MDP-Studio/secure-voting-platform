@@ -27,7 +27,9 @@ def run_migrations_offline():
     For multi-bind migrations, prefer online mode or invoke per-bind offline runs.
     """
     # Fall back to a generic URL (may be None) - offline is rarely used in this project
-    url = config.get_main_option("sqlalchemy.url") or "sqlite:///./app.db"
+    # Use an absolute path for the fallback SQLite database to avoid directory issues.
+    fallback_db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app.db'))
+    url = config.get_main_option("sqlalchemy.url") or f"sqlite:///{fallback_db_path}"
     context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
 
     with context.begin_transaction():
