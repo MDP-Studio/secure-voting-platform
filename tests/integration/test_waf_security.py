@@ -272,6 +272,7 @@ class TestWAFSecurityPenetration:
 
         voting_success_count = sum(1 for r in voting_responses if r in [200, 302, 404])
         print(f"Voting endpoint: {voting_success_count}/{len(voting_responses)} successful requests")
+        print(f"  Voting response codes: {voting_responses}")
 
         # Test 3: Dev endpoint should work (ModSecurity disabled for dev)
         dev_responses = []
