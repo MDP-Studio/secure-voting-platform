@@ -9,6 +9,7 @@ from app.models import (
     Candidate,
     ElectoralRoll,
 )
+from app.db_utils import wait_for_db
 
 # -------------------------------------------------------------------
 # Utilities
@@ -82,6 +83,9 @@ def init_database(app):
     All seeded users are set to `approved` to simplify local testing.
     """
     with app.app_context():
+        # Wait for database to be ready
+        wait_for_db()
+
         # 1) create tables
         try:
             db.create_all()

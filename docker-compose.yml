@@ -67,9 +67,9 @@ services:
       # - ./mysql-logs:/var/log/mysql
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -prootpass || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
+      interval: 10s
+      timeout: 5s
+      retries: 30
     networks:
       - db_net
     ports:
