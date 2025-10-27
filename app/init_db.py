@@ -1,6 +1,6 @@
 # init_db.py
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from app import db
 from app.models import (
     User,
@@ -130,7 +130,7 @@ def init_database(app):
                     driver_lic_no=make_lic("ADMIN01"),
                     driver_lic_state="VIC",
                     has_voted=False,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     account_status="approved",
                 )
                 admin.role = manager_role
@@ -155,7 +155,7 @@ def init_database(app):
                     driver_lic_no=make_lic("DELEG01"),
                     driver_lic_state="NSW",
                     has_voted=False,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     account_status="approved",
                 )
                 delegate1.role = delegate_role
@@ -178,7 +178,7 @@ def init_database(app):
                     driver_lic_no=make_lic("VOTER01"),
                     driver_lic_state="NSW",
                     has_voted=False,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     account_status="approved",
                 )
                 voter1.role = voter_role
@@ -201,7 +201,7 @@ def init_database(app):
                     driver_lic_no=make_lic("LIX0001"),
                     driver_lic_state="VIC",
                     has_voted=False,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     account_status="approved",
                 )
                 lix.role = voter_role
@@ -232,7 +232,7 @@ def init_database(app):
                             driver_lic_state=voter_data['state'],
                             role=voter_role,
                             has_voted=False,
-                            created_at=datetime.utcnow(),
+                            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                             account_status="approved",
                         )
                         test_user.set_password(voter_data['password'])
@@ -269,7 +269,7 @@ def init_database(app):
                     region_id=sydney.id,
                     status="active",
                     verified=True,
-                    verified_at=datetime.utcnow(),
+                    verified_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     user_id=voter1.id,
                 )
                 db.session.add(er)
@@ -300,7 +300,7 @@ def init_database(app):
                             region_id=random_region.id,
                             status="active",
                             verified=True,
-                            verified_at=datetime.utcnow(),
+                            verified_at=datetime.now(timezone.utc).replace(tzinfo=None),
                             user_id=test_user.id,
                         )
                         db.session.add(er)

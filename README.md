@@ -2,12 +2,16 @@
 
 A secure online voting platform inspired by Australian electoral systems, featuring multi-factor authentication, geo-filtering, and comprehensive security measures.
 
+<!-- CI/CD Test Trigger -->
+
 ## Quick Links 🔗
 
 - **Basic Flask App Demo:** [http://localhost:5000](http://localhost:5000) (no WAF protection)
 - **WAF Protected:** [http://localhost](http://localhost) (with nginx + ModSecurity)
+- **Vault UI:** [http://localhost:8200](http://localhost:8200) (HashiCorp Vault)
 - **Test Documentation:** [tests/README.md](tests/README.md)
 - **Password Policy:** [docs/PASSWORD_POLICY.md](docs/PASSWORD_POLICY.md)
+- **Vault Setup:** [docs/VAULT_SETUP.md](docs/VAULT_SETUP.md)
 - **WAF Demo Tool:** `/tests/test_waf_demo.py`
 - **Testing Section:** [Jump to Testing](#testing)
 
@@ -32,6 +36,9 @@ A secure online voting platform inspired by Australian electoral systems, featur
  - Manager: admin / Admin@123456!
  - Delegate: delegate1 / Delegate@123!
  - Voter: voter1 / Password@123!
+
+**Driver Licence:**
+- Try `DL123458`
 
 **Note:** All passwords must meet strong password requirements:
 - Minimum 12 characters
@@ -108,6 +115,43 @@ export ENABLE_MFA="True"
    ```
 
 **Credentials:** Same as local setup.
+
+## HashiCorp Vault Integration 🔐
+
+The system now includes HashiCorp Vault for enhanced security:
+
+### Quick Start with Vault
+
+1. **Start all services:**
+   ```bash
+   docker-compose up -d
+   ```
+
+2. **Initialize Vault:**
+   ```bash
+   python3 scripts/init_vault.py
+   ```
+
+3. **Access Vault UI:** [http://localhost:8200](http://localhost:8200)
+   - **Token:** `vault-dev-token`
+
+### Vault Features
+
+- **Result Signing**: Cryptographic signing of election results using Vault's Transit engine
+- **Key Management**: Centralized and secure key storage
+- **Configuration**: Secure storage of sensitive configuration values
+- **Audit Trail**: Comprehensive logging of all operations
+
+### Test Vault Integration
+
+```bash
+# Run the Vault integration test suite
+python3 scripts/test_vault_integration.py
+```
+
+**Note:** Vault integration is optional. The system will automatically fall back to local RSA keys if Vault is unavailable.
+
+For detailed setup instructions, see [Vault Setup Documentation](docs/VAULT_SETUP.md).
 
 ## Testing
 

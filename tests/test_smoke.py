@@ -46,7 +46,7 @@ class TestSmokeTests:
         # Attempt login
         response = client.post('/login', data={
             'username': 'voter1',
-            'password': 'password123'
+            'password': 'Password@123!'
         }, follow_redirects=True)
 
         assert response.status_code == 200
@@ -74,7 +74,7 @@ class TestSmokeTests:
         # Login first
         client.post('/login', data={
             'username': 'voter1',
-            'password': 'password123'
+            'password': 'Password@123!'
         })
 
         # Access dashboard
@@ -92,7 +92,7 @@ class TestSmokeTests:
         # Login
         client.post('/login', data={
             'username': 'voter1',
-            'password': 'password123'
+            'password': 'Password@123!'
         })
 
         # Vote for candidate
@@ -116,7 +116,7 @@ class TestSmokeTests:
         # Login as admin
         client.post('/login', data={
             'username': 'admin',
-            'password': 'admin123'
+            'password': 'Admin@123456!'
         })
 
         # Access results
@@ -129,7 +129,7 @@ class TestSmokeTests:
         # Login as regular user
         client.post('/login', data={
             'username': 'voter1',
-            'password': 'password123'
+            'password': 'Password@123!'
         })
 
         # Try to access results - should redirect to dashboard
@@ -143,7 +143,7 @@ class TestSmokeTests:
         # Login first
         client.post('/login', data={
             'username': 'voter1',
-            'password': 'password123'
+            'password': 'Password@123!'
         })
 
         # Logout
@@ -164,7 +164,7 @@ class TestSmokeTests:
         # Login and vote
         client.post('/login', data={
             'username': 'voter1',
-            'password': 'password123'
+            'password': 'Password@123!'
         })
 
         # First vote

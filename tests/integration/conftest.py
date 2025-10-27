@@ -45,19 +45,21 @@ class HTTPTestRunner:
     - API endpoint testing
     """
 
-    def __init__(self, base_url: str = "http://localhost:5000"):
+    def __init__(self, base_url: str = "http://localhost"):
         self.base_url = base_url.rstrip('/')
         self.session = requests.Session()
+        
+        # Spoof a browser User-Agent to bypass CLI client blocking
+        # (Server blocks curl, wget, httpie, python-requests, etc. for security)
+        # Also set default Referer for Origin/Referer validation checks
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Referer': self.base_url + '/login'  # Default Referer for security checks
+        })
 
         # Rate limiting protection - add delay between requests
         self.last_request_time = 0
         self.min_request_delay = 0.1  # 100ms between requests
-
-        # Test user credentials
-        self.test_users = {
-            'admin': {'username': 'admin', 'password': 'admin123'},
-            'voter': {'username': 'voter1', 'password': 'VoterSecurePass123!'}
-        }
 
     def _rate_limit_delay(self):
         """Add delay between requests to avoid rate limiting."""
@@ -81,18 +83,46 @@ class HTTPTestRunner:
 
     def login(self, username: str, password: str) -> bool:
         """Attempt login and return success status."""
-        # First get login page to get CSRF token if needed
+        # First get login page to ensure we have proper session
         response = self.get('/login')
         if response.status_code != 200:
+            logging.error(f"Failed to GET /login: {response.status_code}")
             return False
 
-        # For now, simple login (may need OTP handling)
+        # Fetch the login nonce (required for security unless in TESTING mode)
+        nonce_response = self.get('/login-nonce')
+        nonce = None
+        if nonce_response.status_code != 200:
+            # If nonce endpoint fails, still try login (might be in TESTING mode)
+            logging.warning(f"Failed to GET /login-nonce: {nonce_response.status_code}")
+        else:
+            try:
+                nonce_data = nonce_response.json()
+                nonce = nonce_data.get('nonce')
+                logging.info(f"Successfully fetched nonce: {nonce[:20] if nonce else 'None'}...")
+            except Exception as e:
+                logging.error(f"Failed to parse nonce response JSON: {e}, response: {nonce_response.text[:200]}")
+                nonce = None
+
+        # Build login form data
         login_data = {
             'username': username,
             'password': password
         }
+        
+        # Include nonce if available
+        if nonce:
+            login_data['login_nonce'] = nonce
+            logging.info(f"Attempting login for {username} with nonce")
+        else:
+            logging.warning(f"Attempting login for {username} WITHOUT nonce (may be in TESTING mode)")
 
         response = self.post('/login', data=login_data, allow_redirects=False)
+
+        # Log the response for debugging
+        logging.info(f"Login POST response status: {response.status_code}")
+        if response.status_code != 302:
+            logging.error(f"Login failed. Response text preview: {response.text[:300]}")
 
         # Success: 302 redirect to appropriate dashboard based on role
         # - voters: /dashboard
@@ -259,10 +289,8 @@ def clean_session(http_runner):
 
 @pytest.fixture(scope="function")
 def clean_session_with_retry(http_runner):
-    """Pytest fixture with automatic retry on rate limiting."""
+    """Pytest fixture for integration testing."""
     http_runner.session.cookies.clear()
-    # Add test mode header to relax rate limiting
-    http_runner.session.headers.update({'X-Test-Mode': '1'})
     yield http_runner
     http_runner.session.cookies.clear()
 

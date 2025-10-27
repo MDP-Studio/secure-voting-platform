@@ -20,6 +20,32 @@ from app.models import User
 from app import db
 
 
+def _generate_valid_driver_license(base: str = "DL12345") -> str:
+    """
+    Generate a valid driver license with proper checksum.
+    
+    Args:
+        base: Base string (without checksum)
+        
+    Returns:
+        str: Valid driver license with checksum
+    """
+    def _checksum11(s: str) -> int:
+        val = 0
+        for i, ch in enumerate(s, start=1):
+            if ch.isdigit():
+                v = ord(ch) - 48
+            else:
+                v = 10 + (ord(ch.upper()) - 65)
+            val += v * i
+        return val % 11
+    
+    chk = _checksum11(base)
+    if chk == 10:
+        return base + 'X'
+    return base + str(chk)
+
+
 class TestPasswordValidationFunction:
     """Test the standalone password validation functions."""
     
@@ -149,7 +175,7 @@ class TestUserModelPasswordValidation:
     def test_user_set_password_valid(self, app):
         """Test that valid password can be set on User model."""
         with app.app_context():
-            user = User(username="testuser", email="test@test.com")
+            user = User(username="testuser", email="test@test.com", driver_lic_no="DL123458", driver_lic_state="NSW")
             user.set_password("ValidPass123!")
             assert user.password_hash is not None
             assert user.check_password("ValidPass123!")
@@ -157,14 +183,14 @@ class TestUserModelPasswordValidation:
     def test_user_set_password_invalid_raises_error(self, app):
         """Test that invalid password raises PasswordValidationError."""
         with app.app_context():
-            user = User(username="testuser", email="test@test.com")
+            user = User(username="testuser", email="test@test.com", driver_lic_no="DL123459", driver_lic_state="NSW")
             with pytest.raises(PasswordValidationError):
                 user.set_password("weak")
     
     def test_user_set_password_too_short(self, app):
         """Test that short password is rejected."""
         with app.app_context():
-            user = User(username="testuser", email="test@test.com")
+            user = User(username="testuser", email="test@test.com", driver_lic_no="DL123460", driver_lic_state="NSW")
             with pytest.raises(PasswordValidationError) as exc_info:
                 user.set_password("Short1!")
             assert "12 characters" in str(exc_info.value)
@@ -172,7 +198,7 @@ class TestUserModelPasswordValidation:
     def test_user_set_password_no_uppercase(self, app):
         """Test that password without uppercase is rejected."""
         with app.app_context():
-            user = User(username="testuser", email="test@test.com")
+            user = User(username="testuser", email="test@test.com", driver_lic_no="DL123461", driver_lic_state="NSW")
             with pytest.raises(PasswordValidationError) as exc_info:
                 user.set_password("nouppercase123!")
             assert "uppercase" in str(exc_info.value)
@@ -180,7 +206,7 @@ class TestUserModelPasswordValidation:
     def test_user_set_password_no_special(self, app):
         """Test that password without special character is rejected."""
         with app.app_context():
-            user = User(username="testuser", email="test@test.com")
+            user = User(username="testuser", email="test@test.com", driver_lic_no="DL123462", driver_lic_state="NSW")
             with pytest.raises(PasswordValidationError) as exc_info:
                 user.set_password("NoSpecial123Abc")
             assert "special" in str(exc_info.value)
@@ -221,31 +247,38 @@ class TestPasswordValidationIntegration:
     
     def test_registration_with_weak_password(self, client, app):
         """Test that registration fails with weak password."""
+        valid_license = _generate_valid_driver_license("DL12340")
         response = client.post('/register', data={
             'username': 'newuser',
             'email': 'newuser@test.com',
-            'password': 'weak'
+            'password': 'weak',
+            'confirm': 'weak',
+            'driver_lic_no': valid_license,  # Valid driver license
+            'driver_lic_state': 'NSW'
         }, follow_redirects=True)
         
-        # Should redirect back to registration with error
-        assert b'Password validation failed' in response.data or b'12 characters' in response.data
+        # Weak password should be rejected - user should not be created
+        with app.app_context():
+            user = User.query.filter_by(username='newuser').first()
+            assert user is None, "User with weak password should not be created"
     
     def test_registration_with_strong_password(self, client, app):
         """Test that registration succeeds with strong password."""
+        valid_license = _generate_valid_driver_license("DL12341")
+        response = client.post('/register', data={
+            'username': 'stronguser',
+            'email': 'stronguser@test.com',
+            'password': 'StrongPass@123',  # 12+ chars with uppercase, lowercase, special char, digit
+            'confirm': 'StrongPass@123',
+            'driver_lic_no': valid_license,  # Programmatically generated valid license
+            'driver_lic_state': 'NSW'
+        }, follow_redirects=True)
+        
+        # Verify user was created with strong password
         with app.app_context():
-            response = client.post('/register', data={
-                'username': 'stronguser',
-                'email': 'stronguser@test.com',
-                'password': 'StrongPass123!'
-            }, follow_redirects=True)
-            
-            # Should succeed and redirect to login
-            assert b'Registration successful' in response.data or b'log in' in response.data.lower()
-            
-            # Verify user was created
             user = User.query.filter_by(username='stronguser').first()
-            assert user is not None
-            assert user.check_password('StrongPass123!')
+            assert user is not None, "User with strong password should be created"
+            assert user.check_password('StrongPass@123'), "Password should match"
 
 
 if __name__ == '__main__':

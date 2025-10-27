@@ -11,4 +11,5 @@ geoip2>=4.8.0
 psutil
 python-dotenv
 PyJWT
+hvac>=1.2.0
 prometheus_client>=0.16.0

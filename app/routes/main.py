@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, render_template, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app import db
 from app.models import User, Candidate, Vote, Region
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 from functools import wraps
 from sqlalchemy import func
@@ -135,7 +135,7 @@ def vote():
         flash("Invalid candidate selected.")
         return redirect(url_for("main.dashboard"))
 
-    candidate = Candidate.query.get(candidate_id)
+    candidate = db.session.get(Candidate, candidate_id)
     if not candidate:
         flash("Invalid candidate selected.")
         return redirect(url_for("main.dashboard"))
@@ -153,7 +153,7 @@ def vote():
     )
     
     # Create vote hash for integrity
-    vote_data = f"{current_user.id}{candidate.id}{datetime.utcnow().timestamp()}"
+    vote_data = f"{current_user.id}{candidate.id}{datetime.now(timezone.utc).replace(tzinfo=None).timestamp()}"
     v.vote_hash = hashlib.sha256(vote_data.encode()).hexdigest()
 
     # Persist vote and user state in a transaction. If another concurrent
@@ -221,7 +221,7 @@ def results():
     return render_template('results.html', 
                          votes=results, 
                          total_votes=total_votes,
-                         timestamp=datetime.utcnow(),
+                         timestamp=datetime.now(timezone.utc).replace(tzinfo=None),
                          admin_user=current_user.username)
 
 @main.errorhandler(403)

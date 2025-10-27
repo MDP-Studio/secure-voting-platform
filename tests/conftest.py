@@ -76,20 +76,27 @@ def _create_test_data():
         driver_lic_state='NSW',
         account_status='approved'
     )
+    admin = User(
+        username='admin',
+        email='admin@voting.com',
+        driver_lic_no='DL123458',  # Valid driver license (checksum: 8)
+        driver_lic_state='NSW',
+        account_status='approved'  # Admin is pre-approved
+    )
     admin.role_id = manager_role.id
-    admin.set_password('AdminSecurePass123!')
+    admin.set_password('Admin@123456!')
     db.session.add(admin)
     
     # Create sample voter (matching init_db.py)
     voter1 = User(
-        username='voter1', 
+        username='voter1',
         email='voter1@email.com',
-        driver_lic_no='DL001',
-        driver_lic_state='NSW',
-        account_status='approved'
+        driver_lic_no='VIC00014',  # Valid driver license (checksum: 4)
+        driver_lic_state='VIC',
+        account_status='approved'  # Voter is pre-approved for testing
     )
     voter1.role_id = voter_role.id
-    voter1.set_password('VoterSecurePass123!')
+    voter1.set_password('Password@123!')
     db.session.add(voter1)
     db.session.commit()  # Commit to get user.id
     

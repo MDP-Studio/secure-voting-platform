@@ -17,6 +17,7 @@ except Exception:
 
 from app import db
 from app.models import User, Role, Region, ElectoralRoll
+from app.security.password_validator import validate_password_strength, PasswordValidationError
 import time
 from app.security.jwt_helpers import issue_token
 
@@ -463,8 +464,12 @@ def register():
         if password != confirm:
             flash("Passwords do not match")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
-        if not is_strong_password(password):
-            flash("Password too weak: must be 12+ chars with uppercase, lowercase, and special character")
+        
+        # Password validation has been centralized in validate_password_strength()
+        # (replacing is_strong_password()) to ensure consistent password policy enforcement.
+        is_valid, error_message = validate_password_strength(password)
+        if not is_valid:
+            flash(f"Password too weak: {error_message}")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
         # Driver licence

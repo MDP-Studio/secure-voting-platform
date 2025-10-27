@@ -39,11 +39,35 @@ def create_app(test_config=None):
     ChaChaEncryptionService.initialize(os.environ.get('VOTER_PII_KEY_BASE64'))
     # register blueprints and other stuff here
     # default config
+    # Check if running in testing mode (from DEPLOYMENT_ENV or FLASK_ENV)
+    deployment_env = os.environ.get('DEPLOYMENT_ENV', '').lower()
+    flask_env = os.environ.get('FLASK_ENV', '').lower()
+    is_testing = deployment_env == 'testing' or flask_env == 'testing'
+    
+    # Log testing mode for debugging
+    logging.info(f"🧪 DEPLOYMENT_ENV={deployment_env}, FLASK_ENV={flask_env}, TESTING={is_testing}")
+    if is_testing:
+        logging.info("✅ Testing mode ENABLED - security checks disabled")
+    else:
+        logging.info("🔒 Production mode - security checks enabled")
+    
+    # Log environment detection for debugging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.info(f"🔍 Environment Detection:")
+    logger.info(f"  DEPLOYMENT_ENV={deployment_env or '(not set)'}")
+    logger.info(f"  FLASK_ENV={flask_env or '(not set)'}")
+    logger.info(f"  → Testing Mode Enabled: {is_testing}")
+    
     app.config.from_mapping(
         SECRET_KEY=os.environ.get('SECRET_KEY', 'dev-secret'),
         SQLALCHEMY_DATABASE_URI= os.environ.get('DATABASE_URL') 
             or ('sqlite:///' + os.path.join(app.instance_path, 'app.db')),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        
+        # Enable TESTING mode when running in test environment
+        # This disables security checks like login nonce requirement for easier testing
+        TESTING=is_testing,
 
         # Mail settings
         MAIL_SERVER=os.environ.get('MAIL_SERVER', 'smtp.gmail.com'),
@@ -177,7 +201,7 @@ def create_app(test_config=None):
 
         user_id = payload.get('sub')
         try:
-            user = User.query.get(int(user_id))
+            user = db.session.get(User, int(user_id))
         except Exception:
             return None
 

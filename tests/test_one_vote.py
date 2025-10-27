@@ -1,6 +1,6 @@
 def test_one_vote_per_user(client, runner, app):
     # login as voter1
-    rv = client.post('/login', data={'username': 'voter1', 'password': 'VoterSecurePass123!'}, follow_redirects=True)
+    rv = client.post('/login', data={'username': 'voter1', 'password': 'Password@123!'}, follow_redirects=True)
     assert b'Welcome, voter1' in rv.data
 
     # cast a vote

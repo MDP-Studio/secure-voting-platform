@@ -23,7 +23,7 @@ def debug_logout():
 
     # Login
     print("\n1. Logging in...")
-    login_success = runner.login('admin', 'admin123')
+    login_success = runner.login('admin', 'Admin@123456!')
     print(f"   Login success: {login_success}")
 
     # Check authentication
