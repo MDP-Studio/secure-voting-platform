@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, render_template, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app import db
 from app.models import User, Candidate, Vote, Region
-from datetime import datetime, UTC, timezone
+from datetime import datetime, timezone
 import hashlib
 from functools import wraps
 from sqlalchemy import func

@@ -1,6 +1,6 @@
 # init_db.py
 import os
-from datetime import datetime, date, UTC, timezone
+from datetime import datetime, date, timezone
 from app import db
 from app.models import (
     User,

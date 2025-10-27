@@ -9,7 +9,7 @@ This test suite validates:
 """
 
 import pytest
-from datetime import datetime, timedelta, UTC, timezone
+from datetime import datetime, timedelta, timezone
 from app import create_app, db
 from app.models import User, Role
 

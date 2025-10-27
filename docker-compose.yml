@@ -11,8 +11,6 @@ services:
       - "8000:8000" 
     expose:
       - "8000"
-    env_file:
-      - .env
     environment:
       GEO_FILTER_ENABLED: "True"
       GEOIP_DB_PATH: /data/GeoLite2-Country.mmdb
