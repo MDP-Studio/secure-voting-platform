@@ -15,4 +15,3 @@ COPY . .
 EXPOSE 8000
 
 ENTRYPOINT ["sh", "-c", "export PYTHONPATH=/ && python init_db.py && exec gunicorn --pythonpath / -b 0.0.0.0:8000 wsgi:app --workers 2 --threads 4 --timeout 60"]
-CMD ["gunicorn", "--pythonpath", "/", "-b", "0.0.0.0:8000", "wsgi:app", "--workers", "2", "--threads", "4", "--timeout", "60"]

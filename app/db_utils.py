@@ -14,8 +14,12 @@ def wait_for_db(max_attempts=30, delay=2):
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-                result = conn.execute(text("SELECT DATABASE()")).fetchone()
-                db_name = result[0] if result else "unknown"
+                # Try to get database name (works for MySQL, not SQLite)
+                try:
+                    result = conn.execute(text("SELECT DATABASE()")).fetchone()
+                    db_name = result[0] if result else "unknown"
+                except:
+                    db_name = "SQLite" if db_url.startswith("sqlite") else "unknown"
                 print(f"✅ Database '{db_name}' is ready!")
             break
         except Exception as e:
