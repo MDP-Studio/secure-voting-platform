@@ -1,5 +1,5 @@
 # app/models.py
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timezone
 import hashlib
 import re
 from . import db, login_manager
@@ -8,6 +8,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from .security.password_validator import validate_password_strength, PasswordValidationError
 from .security.encryption import EncryptedType
 from sqlalchemy import event
+
+def utcnow_naive():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 # ---- Roles ----
 class Role(db.Model):
@@ -53,10 +56,10 @@ class User(UserMixin, db.Model):
     account_status = db.Column(db.String(20), nullable=False, default="pending")
 
     has_voted = db.Column(db.Boolean, default=False, nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
     
     # Password policy fields
-    password_changed_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+    password_changed_at = db.Column(db.DateTime, default=utcnow_naive)
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
     account_locked_until = db.Column(db.DateTime, nullable=True)
 
@@ -80,7 +83,7 @@ class User(UserMixin, db.Model):
         self.password_hash = generate_password_hash(password)
         
         # Update password change timestamp
-        self.password_changed_at = datetime.now(UTC)
+        self.password_changed_at = utcnow_naive()
         
         # Reset failed login attempts when password is changed
         self.failed_login_attempts = 0
@@ -93,7 +96,7 @@ class User(UserMixin, db.Model):
         """Check if account is currently locked due to failed login attempts."""
         if self.account_locked_until is None:
             return False
-        return datetime.now(UTC) < self.account_locked_until
+        return utcnow_naive() < self.account_locked_until
     
     def record_failed_login(self, max_attempts: int = 5, lockout_minutes: int = 30):
         """
@@ -108,7 +111,7 @@ class User(UserMixin, db.Model):
         self.failed_login_attempts += 1
         
         if self.failed_login_attempts >= max_attempts:
-            self.account_locked_until = datetime.now(UTC) + timedelta(minutes=lockout_minutes)
+            self.account_locked_until = utcnow_naive() + timedelta(minutes=lockout_minutes)
     
     def reset_failed_logins(self):
         """Reset failed login counter and unlock account."""
@@ -132,7 +135,7 @@ class User(UserMixin, db.Model):
             return True
         
         expiration_date = self.password_changed_at + timedelta(days=expiration_days)
-        return datetime.now(UTC) > expiration_date
+        return utcnow_naive() > expiration_date
 
     def has_role(self, *names):
         return self.role and self.role.name in names
@@ -215,8 +218,8 @@ class ElectoralRoll(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True)
     user = db.relationship("User", backref=db.backref("enrolment", uselist=False))
 
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
+    updated_at = db.Column(db.DateTime, default=utcnow_naive, onupdate=utcnow_naive)
 
     def __repr__(self):
         return f"<ElectoralRoll {self.roll_number} {self.full_name}>"
@@ -271,7 +274,7 @@ class Vote(db.Model):
                              nullable=False, index=True)
     position = db.Column(db.String(120), nullable=False)
     vote_hash = db.Column(db.String(64))
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
 
 @login_manager.user_loader
 def load_user(user_id):

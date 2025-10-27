@@ -9,7 +9,7 @@ This test suite validates:
 """
 
 import pytest
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, UTC, timezone
 from app import create_app, db
 from app.models import User, Role
 
@@ -88,7 +88,7 @@ class TestAccountLockout:
         with app.app_context():
             # Lock the account
             user = User.query.filter_by(username='testuser').first()
-            user.account_locked_until = datetime.now(UTC) + timedelta(minutes=30)
+            user.account_locked_until = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=30)
             user.failed_login_attempts = 5
             db.session.commit()
             
@@ -106,7 +106,7 @@ class TestAccountLockout:
             user = User.query.filter_by(username='testuser').first()
             
             # Set lockout to expire in the past
-            user.account_locked_until = datetime.now(UTC) - timedelta(minutes=1)
+            user.account_locked_until = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=1)
             user.failed_login_attempts = 5
             db.session.commit()
             
@@ -140,7 +140,7 @@ class TestPasswordExpiration:
         """Test that recent passwords are not expired."""
         with app.app_context():
             user = User.query.filter_by(username='testuser').first()
-            user.password_changed_at = datetime.now(UTC) - timedelta(days=30)
+            user.password_changed_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=30)
             db.session.commit()
             
             assert user.is_password_expired() is False
@@ -149,7 +149,7 @@ class TestPasswordExpiration:
         """Test that password expires after 90 days."""
         with app.app_context():
             user = User.query.filter_by(username='testuser').first()
-            user.password_changed_at = datetime.now(UTC) - timedelta(days=91)
+            user.password_changed_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=91)
             db.session.commit()
             
             assert user.is_password_expired() is True
@@ -168,7 +168,7 @@ class TestPasswordExpiration:
         with app.app_context():
             # Set password as expired
             user = User.query.filter_by(username='testuser').first()
-            user.password_changed_at = datetime.now(UTC) - timedelta(days=91)
+            user.password_changed_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=91)
             db.session.commit()
             
             # Try to login
@@ -336,7 +336,7 @@ class TestUserModelPasswordMethods:
         with app.app_context():
             user = User.query.filter_by(username='testuser').first()
             user.failed_login_attempts = 3
-            user.account_locked_until = datetime.now(UTC) + timedelta(minutes=30)
+            user.account_locked_until = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=30)
             
             user.set_password('NewPassword789!')
             db.session.commit()
@@ -359,7 +359,7 @@ class TestUserModelPasswordMethods:
         with app.app_context():
             user = User.query.filter_by(username='testuser').first()
             user.failed_login_attempts = 5
-            user.account_locked_until = datetime.now(UTC) + timedelta(minutes=30)
+            user.account_locked_until = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=30)
             
             user.reset_failed_logins()
             
