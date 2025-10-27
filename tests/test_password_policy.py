@@ -124,7 +124,7 @@ class TestAccountLockout:
             # Successful login
             response = client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             }, follow_redirects=True)
             
             # Check that counter is reset
@@ -174,7 +174,7 @@ class TestPasswordExpiration:
             # Try to login
             response = client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             }, follow_redirects=False)
             
             # Should redirect to change password
