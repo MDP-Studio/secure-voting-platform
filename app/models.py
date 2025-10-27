@@ -1,5 +1,5 @@
 # app/models.py
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import hashlib
 import re
 from . import db, login_manager
@@ -263,6 +263,8 @@ class Candidate(db.Model):
 # ---- Votes ----
 class Vote(db.Model):
     __tablename__ = "vote"
+    # Note: bind routing is enforced at the session level; the model itself
+    # does not hard-bind to keep testing/simple setups working on a single DB.
     __table_args__ = (
         # Enforce one vote per user at the database level to prevent duplicates
         db.UniqueConstraint('user_id', name='uq_vote_user_id'),

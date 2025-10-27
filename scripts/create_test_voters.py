@@ -22,8 +22,15 @@ def update_env_file(enable_test_voters):
     """Update the .env file to enable or disable test voter creation."""
     env_file = Path('.env')
     if not env_file.exists():
-        print("❌ .env file not found. Please copy .env.example to .env first.")
-        return False
+        # Create a minimal .env for test purposes
+        try:
+            with open(env_file, 'w') as f:
+                f.write('# Auto-created by create_test_voters.py for tests\n')
+                f.write('CREATE_TEST_VOTERS=false\n')
+            print("INFO: .env file not found. Created a minimal .env for testing.")
+        except Exception as e:
+            print(f"❌ Failed to create .env file: {e}")
+            return False
     
     # Read current content
     with open(env_file, 'r') as f:
@@ -46,7 +53,7 @@ def update_env_file(enable_test_voters):
         f.writelines(lines)
     
     status = "enabled" if enable_test_voters else "disabled"
-    print(f"✅ Test voter creation {status} in .env file")
+    print(f"Test voter creation {status} in .env file")
     return True
 
 def show_current_status():
@@ -64,11 +71,11 @@ def show_current_status():
         count = get_test_voter_count()
         print(f"Available test voters: {count}")
     except ImportError:
-        print("⚠️  Test voter generator not available")
+        print("WARNING: Test voter generator not available")
 
 def reset_database():
     """Reset the database and create test voters."""
-    print("🔄 Resetting database with test voters...")
+    print("Resetting database with test voters...")
     
     # Enable test voters first
     if not update_env_file(True):
@@ -78,7 +85,7 @@ def reset_database():
     db_file = Path('instance/app.db')
     if db_file.exists():
         db_file.unlink()
-        print("🗑️  Removed existing database")
+        print("Removed existing database")
     
     # Run the database initialization
     try:
@@ -87,10 +94,9 @@ def reset_database():
         
         app = create_app()
         init_database(app)
-        print("✅ Database reset complete with test voters!")
-        
+        print("Database reset complete with test voters!")
     except Exception as e:
-        print(f"❌ Failed to reset database: {e}")
+        print(f"ERROR: Failed to reset database: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description='Manage test voters for the voting system')
@@ -103,7 +109,7 @@ def main():
     
     if args.enable:
         update_env_file(True)
-        print("💡 Run 'python run_demo.py' to create the test voters")
+        print("Hint: Run 'python run_demo.py' to create the test voters")
     elif args.disable:
         update_env_file(False)
     elif args.reset:

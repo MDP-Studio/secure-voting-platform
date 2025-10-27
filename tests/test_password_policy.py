@@ -57,7 +57,7 @@ def test_user(app):
             driver_lic_state='NSW',
             role_id=voter_role.id
         )
-        user.set_password('SecureTestPass123!')
+        user.set_password('TestPassword123!')
         db.session.add(user)
         db.session.commit()
         return user
@@ -95,7 +95,7 @@ class TestAccountLockout:
             # Try to login with correct password
             response = client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             }, follow_redirects=True)
             
             assert b'Account is locked' in response.data
@@ -124,7 +124,7 @@ class TestAccountLockout:
             # Successful login
             response = client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             }, follow_redirects=True)
             
             # Check that counter is reset
@@ -174,7 +174,7 @@ class TestPasswordExpiration:
             # Try to login
             response = client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             }, follow_redirects=False)
             
             # Should redirect to change password
@@ -196,12 +196,12 @@ class TestPasswordChange:
             # Login first
             client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             })
             
             # Change password
             response = client.post('/change-password', data={
-                'current_password': 'SecureTestPass123!',
+                'current_password': 'TestPassword123!',
                 'new_password': 'NewSecurePass456!',
                 'confirm_password': 'NewSecurePass456!'
             }, follow_redirects=True)
@@ -212,7 +212,7 @@ class TestPasswordChange:
             # Verify new password works
             user = User.query.filter_by(username='testuser').first()
             assert user.check_password('NewSecurePass456!') is True
-            assert user.check_password('SecureTestPass123!') is False
+            assert user.check_password('TestPassword123!') is False
     
     def test_password_change_fails_with_wrong_current_password(self, app, client, test_user):
         """Test that password change fails with incorrect current password."""
@@ -220,7 +220,7 @@ class TestPasswordChange:
             # Login first
             client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             })
             
             # Try to change password with wrong current password
@@ -238,12 +238,12 @@ class TestPasswordChange:
             # Login first
             client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             })
             
             # Try to change password with mismatched new passwords
             response = client.post('/change-password', data={
-                'current_password': 'SecureTestPass123!',
+                'current_password': 'TestPassword123!',
                 'new_password': 'NewSecurePass456!',
                 'confirm_password': 'DifferentSecurePass456!'
             }, follow_redirects=True)
@@ -256,14 +256,14 @@ class TestPasswordChange:
             # Login first
             client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             })
             
             # Try to change password to the same password
             response = client.post('/change-password', data={
-                'current_password': 'SecureTestPass123!',
-                'new_password': 'SecureTestPass123!',
-                'confirm_password': 'SecureTestPass123!'
+                'current_password': 'TestPassword123!',
+                'new_password': 'TestPassword123!',
+                'confirm_password': 'TestPassword123!'
             }, follow_redirects=True)
             
             assert b'must be different from current password' in response.data
@@ -274,12 +274,12 @@ class TestPasswordChange:
             # Login first
             client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             })
             
             # Try to change to weak password
             response = client.post('/change-password', data={
-                'current_password': 'SecureTestPass123!',
+                'current_password': 'TestPassword123!',
                 'new_password': 'weak',
                 'confirm_password': 'weak'
             }, follow_redirects=True)
@@ -295,7 +295,7 @@ class TestPasswordChange:
             # Login first
             client.post('/login', data={
                 'username': 'testuser',
-                'password': 'SecureTestPass123!'
+                'password': 'TestPassword123!'
             })
             
             # Wait a moment to ensure timestamp difference
@@ -304,7 +304,7 @@ class TestPasswordChange:
             
             # Change password
             client.post('/change-password', data={
-                'current_password': 'SecureTestPass123!',
+                'current_password': 'TestPassword123!',
                 'new_password': 'NewSecurePass456!',
                 'confirm_password': 'NewSecurePass456!'
             })

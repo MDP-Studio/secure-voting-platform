@@ -3,6 +3,7 @@ from flask import (
     Blueprint, render_template, redirect, url_for, flash,
     request, session, make_response, current_app,g
 )
+from app.helpers import flash_once
 from flask_login import login_user, logout_user, current_user
 import logging
 
@@ -233,7 +234,15 @@ def login():
         user = User.query.filter_by(username=username).first()
 
         if not user:
-            flash('User not found')
+            # Don't reveal whether the username exists. Log internally but show
+            # a generic error to the client to prevent user enumeration.
+            logging.warning(f"Failed login attempt for unknown username: '{username}'")
+            # small delay to make timing for non-existent vs bad-password closer
+            try:
+                time.sleep(0.15)
+            except Exception:
+                pass
+            flash_once('Invalid username or password')
             return render_template('login.html', prev_username=username)
         
         # --- Check if account is locked ---
@@ -244,6 +253,16 @@ def login():
 
         # --- Step 2: password must match ---
         if not password or not user.check_password(password):
+            # Generic message for both unknown user and wrong password to avoid
+            # leaking account existence. Keep server-side logs with IP for audit.
+            forwarded_for = request.headers.get('X-Forwarded-For')
+            user_ip = forwarded_for.split(',')[0].strip() if forwarded_for else request.remote_addr
+            logging.warning(f"Failed login attempt for username: '{username}' from IP: {user_ip}")
+            try:
+                time.sleep(0.15)
+            except Exception:
+                pass
+            flash_once('Invalid username or password')
             # Record failed login attempt
             user.record_failed_login()
             db.session.commit()
@@ -289,8 +308,8 @@ def login():
                 dashboard_url = url_for('main.dashboard')
 
             # gentle notice if not admin-approved yet
-            if not getattr(user, "is_approved", False):
-                flash("Your account is pending admin approval. You may not be eligible to vote yet.")
+            #if not getattr(user, "is_approved", False):
+            #    flash_once("Your account is pending admin approval. You may not be eligible to vote yet.")
 
             resp = make_response(redirect(request.args.get('next') or dashboard_url))
             secure = bool(int(current_app.config.get('SESSION_COOKIE_SECURE', 0)))
@@ -305,24 +324,24 @@ def login():
         expires_at  = session.get('otp_expires_at')   # set in /send-otp
 
         if not (sess_code and sess_user and expires_at):
-            flash('OTP not requested or expired. Please click "Get OTP" first.')
+            flash_once('OTP not requested or expired. Please click "Get OTP" first.')
             return render_template('login.html', prev_username=username)
 
         if sess_user != user.id or time.time() > float(expires_at):
             # clear when expired or bound to another user
             for k in ('otp_code', 'otp_user', 'otp_expires_at', 'otp_attempts'):
                 session.pop(k, None)
-            flash('OTP expired. Please request a new OTP.')
+            flash_once('OTP expired. Please request a new OTP.')
             return render_template('login.html', prev_username=username)
 
         attempts = session.get('otp_attempts', 0)
         if attempts >= 5:
-            flash('Too many OTP attempts. Please request a new OTP.')
+            flash_once('Too many OTP attempts. Please request a new OTP.')
             return render_template('login.html', prev_username=username)
 
         if not otp_input or otp_input != sess_code:
             session['otp_attempts'] = attempts + 1
-            flash('Invalid OTP')
+            flash_once('Invalid OTP')
             return render_template('login.html', prev_username=username)
 
         # --- Success: clear OTP session and log in ---
@@ -342,7 +361,7 @@ def login():
         login_user(user)
         token = issue_token(user.id)
         if not getattr(user, "is_approved", False):
-            flash("Your account is pending admin approval. You may not be eligible to vote yet.")
+            flash_once("Your account is pending admin approval. You may not be eligible to vote yet.")
 
         resp = make_response(redirect(request.args.get('next') or url_for('main.dashboard')))
         
@@ -441,30 +460,32 @@ def register():
             user_state_code = lic_state.strip().upper()
             if detected_state_code and user_state_code != detected_state_code:
                 logging.warning(f"Registration geo-mismatch: user selected {user_state_code}, detected {detected_state_code} (IP).")
-                flash("Selected state does not match the detected location from your IP address. If you are using a VPN or the detection failed, contact an administrator for support.")
+                flash_once("Selected state does not match the detected location from your IP address. If you are using a VPN or the detection failed, contact an administrator for support.")
                 return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
 
         # Username
         if not USERNAME_RE.fullmatch(username):
-            flash("Username must be 3-32 chars (letters, digits, _.-)")
+            flash_once("Username must be 3-32 chars (letters, digits, _.-)")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
         if User.query.filter_by(username=username).first():
-            flash("Username already taken")
+            flash_once("Username already taken")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
         # Email
         if not EMAIL_RE.fullmatch(email):
-            flash("Invalid email format")
+            flash_once("Invalid email format")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
         if User.query.filter_by(email=email).first():
-            flash("Email already registered")
+            flash_once("Email already registered")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
         # Password
         if password != confirm:
-            flash("Passwords do not match")
+            flash_once("Passwords do not match")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
+        if not is_strong_password(password):
+            flash_once("Password too weak: must be 8+ chars with letters and digits")
         
         # Password validation has been centralized in validate_password_strength()
         # (replacing is_strong_password()) to ensure consistent password policy enforcement.
@@ -475,8 +496,10 @@ def register():
 
         # Driver licence
         if not validate_driver_lic(lic_no, lic_state or None):
-            flash("Invalid driver licence number")
+            flash_once("Invalid driver licence number")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
+        if User.query.filter_by(driver_lic_no=lic_no).first():
+            flash_once("Driver licence already bound to another account")
         # Uniqueness check via deterministic hash (since licence is stored encrypted)
         from app.models import _hash_lic
         lic_hash = _hash_lic(lic_no)
@@ -533,10 +556,11 @@ def register():
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            flash(f"Failed to create user: {e}")
+            flash_once(f"Failed to create user: {e}")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
-        flash("Registration submitted. Waiting for admin approval.")
+        # On success, notify user and redirect to login
+        flash_once("Registration submitted. Waiting for admin approval.")
         return redirect(url_for('auth.login'))
 
     return render_template('register.html')
@@ -548,7 +572,7 @@ def register():
 @auth.route('/logout')
 def logout():
     logout_user()
-    flash('You have been successfully logged out.')
+    flash_once('You have been successfully logged out.')
     # Clear the session completely
     session.clear()
     resp = make_response(redirect(url_for('auth.login')))

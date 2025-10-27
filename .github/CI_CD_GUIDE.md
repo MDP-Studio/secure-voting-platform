@@ -23,7 +23,7 @@ Two workflows are configured to run tests automatically on every push and pull r
 ### Configuration
 ```yaml
 Timeout: 15 minutes
-Python Version: 3.10
+Python Version: 3.12
 Database: PostgreSQL 15 (in-service)
 Environment: FLASK_ENV=testing
 ```
@@ -57,7 +57,7 @@ Environment: FLASK_ENV=testing
 ### Configuration
 ```yaml
 Timeout: 30 minutes
-Python Version: 3.10
+Python Version: 3.12
 Services: Docker Compose (web, WAF, database)
 Runs Nightly: 2 AM UTC
 ```
