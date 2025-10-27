@@ -9,7 +9,8 @@ from app.models import (
     Candidate,
     ElectoralRoll,
 )
-from app.db_utils import wait_for_db
+from werkzeug.security import generate_password_hash
+from app.utils.db_utils import wait_for_db
 
 # -------------------------------------------------------------------
 # Utilities
@@ -217,28 +218,62 @@ def init_database(app):
 
             # Create 110 test voters for development (always enabled for local dev)
             create_test_voters = os.environ.get('CREATE_TEST_VOTERS', 'true').lower() == 'true'
+            is_testing_env = app.config.get('TESTING', False)
             if create_test_voters and TEST_VOTERS_AVAILABLE:
                 print("🧪 Creating 110 test voters for development purposes...")
                 test_voters_data = get_test_voters()
                 created_count = 0
-                
-                for voter_data in test_voters_data:
-                    # Check if test voter already exists
-                    if not User.query.filter_by(username=voter_data['username']).first():
-                        test_user = User(
+
+                # Fast-path: if no test voters exist, bulk add without per-user existence checks
+                existing_count = User.query.filter(User.username.like('testvoter%')).count()
+                if existing_count == 0:
+                    users = []
+                    ts = datetime.utcnow()
+                    for voter_data in test_voters_data:
+                        users.append(User(
                             username=voter_data['username'],
                             email=voter_data['email'],
                             driver_lic_no=voter_data['driver_license_number'],
                             driver_lic_state=voter_data['state'],
                             role=voter_role,
                             has_voted=False,
-                            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                            created_at=ts,
                             account_status="approved",
-                        )
-                        test_user.set_password(voter_data['password'])
-                        db.session.add(test_user)
-                        created_count += 1
-                
+                            password_hash=generate_password_hash(
+                                voter_data['password'],
+                                method='pbkdf2:sha256:1' if is_testing_env else 'pbkdf2:sha256'
+                            ),
+                            password_changed_at=ts,
+                            failed_login_attempts=0,
+                            account_locked_until=None,
+                        ))
+                    db.session.add_all(users)
+                    created_count = len(users)
+                else:
+                    for voter_data in test_voters_data:
+                        # Check if test voter already exists
+                        if not User.query.filter_by(username=voter_data['username']).first():
+                            test_user = User(
+                                username=voter_data['username'],
+                                email=voter_data['email'],
+                                driver_lic_no=voter_data['driver_license_number'],
+                                driver_lic_state=voter_data['state'],
+                                role=voter_role,
+                                has_voted=False,
+                                created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                                account_status="approved",
+                            )
+                            # For test voters, bypass strength validation to honor test expectations
+                            test_user.password_hash = generate_password_hash(
+                                voter_data['password'],
+                                method='pbkdf2:sha256:1' if is_testing_env else 'pbkdf2:sha256'
+                            )
+                            test_user.password_changed_at = datetime.utcnow()
+                            test_user.failed_login_attempts = 0
+                            test_user.account_locked_until = None
+                            db.session.add(test_user)
+                            created_count += 1
+
                 if created_count > 0:
                     print(f"✅ Created {created_count} test voters")
                 else:
@@ -281,30 +316,59 @@ def init_database(app):
                 regions = Region.query.all()  # Get all available regions
                 roll_entries_created = 0
                 
-                for voter_data in test_voters_data:
-                    # Find the corresponding user
-                    test_user = User.query.filter_by(username=voter_data['username']).first()
-                    if test_user and not ElectoralRoll.query.filter_by(user_id=test_user.id).first():
-                        # Assign random region for testing
-                        random_region = regions[hash(voter_data['username']) % len(regions)]
-                        
-                        er = ElectoralRoll(
-                            roll_number=voter_data['roll_number'],
-                            driver_license_number=voter_data['driver_license_number'],
-                            full_name=voter_data['full_name'],
-                            date_of_birth=voter_data['date_of_birth'],
-                            address_line1=voter_data['address_line1'],
-                            suburb=voter_data['suburb'],
-                            state=voter_data['state'],
-                            postcode=voter_data['postcode'],
-                            region_id=random_region.id,
-                            status="active",
-                            verified=True,
-                            verified_at=datetime.now(timezone.utc).replace(tzinfo=None),
-                            user_id=test_user.id,
-                        )
-                        db.session.add(er)
-                        roll_entries_created += 1
+                # Fast-path if fresh DB: assume no roll entries exist
+                existing_rolls = ElectoralRoll.query.filter(ElectoralRoll.roll_number.like('ER-1%')).count()
+                if existing_rolls == 0:
+                    # Build a map of username -> user.id to avoid per-item queries
+                    users_index = {u.username: u.id for u in User.query.filter(User.username.like('testvoter%')).all()}
+                    ts = datetime.utcnow()
+                    bulk_rolls = []
+                    for voter_data in test_voters_data:
+                        uid = users_index.get(voter_data['username'])
+                        if uid:
+                            random_region = regions[hash(voter_data['username']) % len(regions)]
+                            bulk_rolls.append(ElectoralRoll(
+                                roll_number=voter_data['roll_number'],
+                                driver_license_number=voter_data['driver_license_number'],
+                                full_name=voter_data['full_name'],
+                                date_of_birth=voter_data['date_of_birth'],
+                                address_line1=voter_data['address_line1'],
+                                suburb=voter_data['suburb'],
+                                state=voter_data['state'],
+                                postcode=voter_data['postcode'],
+                                region_id=random_region.id,
+                                status="active",
+                                verified=True,
+                                verified_at=ts,
+                                user_id=uid,
+                            ))
+                    db.session.add_all(bulk_rolls)
+                    roll_entries_created = len(bulk_rolls)
+                else:
+                    for voter_data in test_voters_data:
+                        # Find the corresponding user
+                        test_user = User.query.filter_by(username=voter_data['username']).first()
+                        if test_user and not ElectoralRoll.query.filter_by(user_id=test_user.id).first():
+                            # Assign random region for testing
+                            random_region = regions[hash(voter_data['username']) % len(regions)]
+                            
+                            er = ElectoralRoll(
+                                roll_number=voter_data['roll_number'],
+                                driver_license_number=voter_data['driver_license_number'],
+                                full_name=voter_data['full_name'],
+                                date_of_birth=voter_data['date_of_birth'],
+                                address_line1=voter_data['address_line1'],
+                                suburb=voter_data['suburb'],
+                                state=voter_data['state'],
+                                postcode=voter_data['postcode'],
+                                region_id=random_region.id,
+                                status="active",
+                                verified=True,
+                                verified_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                                user_id=test_user.id,
+                            )
+                            db.session.add(er)
+                            roll_entries_created += 1
                 
                 if roll_entries_created > 0:
                     print(f"✅ Created {roll_entries_created} electoral roll entries for test voters")

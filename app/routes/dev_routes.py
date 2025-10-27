@@ -3,7 +3,7 @@ Developer routes for debugging and monitoring.
 This file contains development-only routes that should NEVER be enabled in production.
 """
 
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, g
 from app import db
 from app.models import User, Candidate, Vote
 from app.security import get_client_ip, is_ip_allowed
@@ -90,13 +90,38 @@ def dev_dashboard():
 
     # Database information
     db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI', 'Not configured')
+    db_binds = current_app.config.get('SQLALCHEMY_BINDS') or {}
+    active_bind = getattr(g, '_active_bind', None) or 'default'
+    debug_db_bind = bool(current_app.config.get('DEBUG_DB_BIND'))
+
+    # Evaluate whether a true split is configured (different URLs)
+    try:
+        unique_uris = {db_uri}
+        admin_uri = db_binds.get('admin')
+        voters_uri = db_binds.get('voters')
+        if admin_uri:
+            unique_uris.add(admin_uri)
+        if voters_uri:
+            unique_uris.add(voters_uri)
+        split_enabled = len(unique_uris) > 1
+    except Exception:
+        split_enabled = False
+
     db_info = {
         'uri': db_uri,
-        'type': 'SQLite' if db_uri.startswith('sqlite:///') else ('MySQL' if 'mysql' in db_uri else ('PostgreSQL' if 'postgresql' in db_uri else 'Unknown')),
+        'type': 'SQLite' if isinstance(db_uri, str) and db_uri.startswith('sqlite:///') else (
+            'MySQL' if isinstance(db_uri, str) and 'mysql' in db_uri else (
+            'PostgreSQL' if isinstance(db_uri, str) and 'postgresql' in db_uri else 'Unknown')
+        ),
+        'active_bind': active_bind,
+        'debug_db_bind_header': debug_db_bind,
+        'split_configured': split_enabled,
+        'bind_admin': admin_uri or '(not set)',
+        'bind_voters': voters_uri or '(not set)',
     }
 
     # For SQLite, add file information
-    if db_uri.startswith('sqlite:///'):
+    if isinstance(db_uri, str) and db_uri.startswith('sqlite:///'):
         db_path = db_uri.replace('sqlite:///', '')
         db_info.update({
             'path': db_path,
