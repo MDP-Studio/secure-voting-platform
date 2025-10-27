@@ -17,6 +17,7 @@ services:
       VOTING_VOTER_USER: voting_voter
       VOTING_VOTER_PASS: voterpass
       DATABASE_URL: mysql+pymysql://votinguser:votingpass@db:3306/votingdb
+      MYSQL_ROOT_PASSWORD: rootpass
       DEBUG_DB_BIND: "true"
       GEO_FILTER_ENABLED: "True"
       GEOIP_DB_PATH: /data/GeoLite2-Country.mmdb
@@ -30,6 +31,7 @@ services:
     volumes:
       - ./data:/data
       - ./instance:/instance
+      - ./scripts:/scripts:ro
     depends_on:
       db:
         condition: service_healthy
