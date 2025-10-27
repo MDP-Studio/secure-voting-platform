@@ -3,6 +3,7 @@ Developer routes for debugging and monitoring.
 This file contains development-only routes that should NEVER be enabled in production.
 """
 
+from datetime import timezone
 from flask import Blueprint, render_template, request, jsonify
 from app import db
 from app.models import User, Candidate, Vote
@@ -15,7 +16,50 @@ from flask import current_app
 from datetime import datetime
 import subprocess
 
+from app.security.helpers import get_allowed_dev_subnets
+
 dev = Blueprint('dev', __name__, url_prefix='/dev')
+
+# create a demo to show how we can request a particular sensitive cookie issent via secure channels
+# in local development the cookie won't be sent by the browser, so it will fail, but this shows how to do it properly
+@dev.route('/set-cookie')
+def set_secure_cookie():
+    """Demo route to show secure cookie handling"""
+    # http://insecure.local/dev/set-cookie
+
+    secure_cookie = request.cookies.get('secure_cookie_demo')
+
+    if secure_cookie:
+        response_data = "Cookie received."
+    else:
+        response_data = "No found."
+
+    response = jsonify(message="Sent secure cookie demo.", cookie_status=response_data)
+
+    # Use the time to set a unique value
+    value = f"secure_value_{int(datetime.now(timezone.utc).timestamp())}"
+
+    # Set secure cookie with Secure, HttpOnly, SameSite attributes
+    response.set_cookie('secure_cookie_demo', value, secure=True, httponly=True, samesite='Strict')
+
+    return response
+
+@dev.route('/show-cookie')
+def show_secure_cookie():
+    """Demo route to show secure cookie handling"""
+    # http://insecure.local/dev/show-cookie
+
+    secure_cookie = request.cookies.get('secure_cookie_demo')
+    
+    if secure_cookie:
+        response_data = "Cookie received."
+    else:
+        response_data = "Not found."
+
+    response = jsonify(message="Secure cookie demo.", cookie_status=response_data)
+
+    return response
+
 
 @dev.route('/dashboard')
 def dev_dashboard():
@@ -24,7 +68,7 @@ def dev_dashboard():
     client_ip = get_client_ip(request)
     
     # For development, also allow requests from nginx container network
-    allowed_ips = ['127.0.0.1', '::1', '172.16.0.0/12']
+    allowed_ips = get_allowed_dev_subnets()
     
     # Check if client IP is allowed (supports both individual IPs and CIDR subnets)
     if not is_ip_allowed(client_ip, allowed_ips):
@@ -130,7 +174,7 @@ def get_logs():
     client_ip = get_client_ip(request)
 
     # For development, also allow requests from nginx container network
-    allowed_ips = ['127.0.0.1', '::1', '172.16.0.0/12']
+    allowed_ips = get_allowed_dev_subnets()
 
     # Check if client IP is allowed (supports both individual IPs and CIDR subnets)
     if not is_ip_allowed(client_ip, allowed_ips):
