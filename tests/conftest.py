@@ -3,7 +3,7 @@ import os
 import tempfile
 from datetime import date
 from app import create_app, db
-from app.models import User, Candidate, Vote, Role, Region, ElectoralRoll
+from app.models import User, Candidate, Role, Region, ElectoralRoll
 
 
 def pytest_addoption(parser):

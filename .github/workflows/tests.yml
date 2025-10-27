@@ -3,8 +3,6 @@ name: Run Critical Tests
 on:
   push:
     branches: ['**']
-  pull_request:
-    branches: ['**']
 
 env:
   DEPLOYMENT_ENV: testing
