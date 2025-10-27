@@ -1,5 +1,5 @@
 # app/models.py
-from datetime import datetime, UTC, timezone
+from datetime import datetime, timezone, timedelta
 import hashlib
 import re
 from . import db, login_manager
@@ -254,7 +254,7 @@ class Candidate(db.Model):
         passive_deletes=True,
     )
 
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):
         return f"<Candidate {self.name} - {self.position} ({self.region.name})>"
