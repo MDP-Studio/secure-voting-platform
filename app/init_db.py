@@ -89,7 +89,7 @@ def init_database(app):
 
         # 1) create tables
         try:
-            db.create_all()
+            db.metadata.create_all(db.engine)
         except Exception as e:
             print(f"❌ Failed to create database tables: {e}")
             print("💡 This may be a schema mismatch. Reset the DB or run migrations.")

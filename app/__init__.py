@@ -204,6 +204,11 @@ def create_app(test_config=None):
     login_manager.init_app(app)
     mail.init_app(app)   # Initialize Mail
 
+    try:
+        migrate.init_app(app, db)
+    except Exception as e:
+        app.logger.warning(f"Flask-Migrate initialization failed: {e}")
+
     # import blueprints (auth and main routes already in repo)
     from app import auth
     from app.routes import main, dev_routes, health, candidates, registration, password, results

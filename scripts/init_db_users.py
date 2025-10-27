@@ -71,10 +71,14 @@ def create_db_users():
                 else:
                     raise
 
-            # Voter user: read access to all, insert on vote, update has_voted on user
-            cursor.execute("GRANT SELECT ON votingdb.* TO 'voting_voter'@'%'")
-            cursor.execute("GRANT INSERT ON votingdb.vote TO 'voting_voter'@'%'")
-            cursor.execute("GRANT UPDATE (has_voted) ON votingdb.user TO 'voting_voter'@'%'")
+            try:
+                # Voter user: read access to all
+                cursor.execute("GRANT SELECT ON votingdb.* TO 'voting_voter'@'%'")
+            except pymysql.err.OperationalError as e:
+                if e.args[0] == 1147:  # No such grant defined
+                    pass
+                else:
+                    raise
 
             cursor.execute("FLUSH PRIVILEGES")
         conn.commit()
