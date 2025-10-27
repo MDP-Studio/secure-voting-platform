@@ -12,15 +12,15 @@ services:
     expose:
       - "8000"
     environment:
-      ADMIN_DATABASE_URL: mysql+pymysql://${VOTING_ADMIN_USER}:${VOTING_ADMIN_PASS}@db:3306/votingdb_admin
-      VOTERS_DATABASE_URL: mysql+pymysql://${VOTING_VOTER_USER}:${VOTING_VOTER_PASS}@db:3306/votingdb_voters
       VOTING_ADMIN_USER: voting_admin
       VOTING_ADMIN_PASS: adminpass
       VOTING_VOTER_USER: voting_voter
       VOTING_VOTER_PASS: voterpass
+      DATABASE_URL: mysql+pymysql://votinguser:votingpass@db:3306/votingdb
       DEBUG_DB_BIND: "true"
       GEO_FILTER_ENABLED: "True"
       GEOIP_DB_PATH: /data/GeoLite2-Country.mmdb
+      VOTER_PII_KEY_BASE64: "07+p3ggToAQUt+iO19uoJHJikDrbiUOImzVnwO7TU3M="
       LOG_LEVEL: info
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "vault-dev-token"
@@ -76,6 +76,7 @@ services:
       MYSQL_PASSWORD: votingpass
     volumes:
       - db_data:/var/lib/mysql
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
       # keep slow query logs on a host path
       # - ./mysql-logs:/var/log/mysql
     healthcheck:

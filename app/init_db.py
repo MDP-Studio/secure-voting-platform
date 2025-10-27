@@ -10,7 +10,7 @@ from app.models import (
     ElectoralRoll,
 )
 from werkzeug.security import generate_password_hash
-from app.db_utils import wait_for_db
+from app.utils.db_utils import wait_for_db
 
 # -------------------------------------------------------------------
 # Utilities
@@ -241,7 +241,7 @@ def init_database(app):
                             account_status="approved",
                             password_hash=generate_password_hash(
                                 voter_data['password'],
-                                method='pbkdf2:sha256:1' if is_testing_env else None
+                                method='pbkdf2:sha256:1' if is_testing_env else 'pbkdf2:sha256'
                             ),
                             password_changed_at=ts,
                             failed_login_attempts=0,
@@ -266,7 +266,7 @@ def init_database(app):
                             # For test voters, bypass strength validation to honor test expectations
                             test_user.password_hash = generate_password_hash(
                                 voter_data['password'],
-                                method='pbkdf2:sha256:1' if is_testing_env else None
+                                method='pbkdf2:sha256:1' if is_testing_env else 'pbkdf2:sha256'
                             )
                             test_user.password_changed_at = datetime.utcnow()
                             test_user.failed_login_attempts = 0

@@ -1,8 +1,7 @@
 # app/models.py
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import hashlib
 import re
-import os
 from . import db, login_manager
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash

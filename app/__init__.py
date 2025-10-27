@@ -13,6 +13,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from .security.encryption import ChaChaEncryptionService
+from .utils.db_utils import _build_db_binds
 
 class RoutingSession(Session):
     """
@@ -98,14 +99,7 @@ def create_app(test_config=None):
             or ('sqlite:///' + os.path.join(app.instance_path, 'app.db')),
         # Optional secondary databases (binds). If not provided, they default
         # to the primary URI so the app keeps working unchanged.
-        SQLALCHEMY_BINDS={
-            # Admin/management traffic (managers, delegates, /admin routes)
-            'admin': os.environ.get('ADMIN_DATABASE_URL') or os.environ.get('DATABASE_URL')
-                or ('sqlite:///' + os.path.join(app.instance_path, 'app.db')),
-            # Voter/public traffic (registration, voting, public pages)
-            'voters': os.environ.get('VOTERS_DATABASE_URL') or os.environ.get('DATABASE_URL')
-                or ('sqlite:///' + os.path.join(app.instance_path, 'app.db')),
-        },
+        SQLALCHEMY_BINDS=_build_db_binds(app.instance_path),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         
         # Enable TESTING mode when running in test environment

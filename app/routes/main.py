@@ -1,11 +1,8 @@
 from flask import Blueprint, jsonify, render_template, redirect, url_for, flash, request, abort
 from flask_login import login_required, current_user
 from app import db
-from app.models import User, Candidate, Vote, Region
-from datetime import datetime, timezone
-import hashlib
+from app.models import Candidate, Region
 from functools import wraps
-from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from flask import current_app
 from app.vote_service import cast_anonymous_vote
