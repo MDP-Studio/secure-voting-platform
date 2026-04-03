@@ -11,45 +11,51 @@ class AlreadyVotedError(Exception):
 
 def cast_anonymous_vote(db, user, candidate):
     """
-    Cast an anonymous vote with pessimistic locking.
+    Cast an anonymous vote with database-level double-vote prevention.
 
     Anonymity design:
     -----------------
-    The ballot is stored with a cryptographically random nonce
-    (``secrets.token_hex(32)``) that has ZERO mathematical relationship
-    to the voter's identity.  Even with full compromise of the database,
-    application secrets, and source code, there is no stored mapping from
-    a Vote record back to a User.
+    The ballot (``Vote``) stores a cryptographically random nonce with
+    ZERO relationship to the voter.  No FK, no HMAC, no derivation.
 
     Concurrency safety:
     -------------------
-    A ``SELECT ... FOR UPDATE`` row lock is acquired on the User record
-    before checking ``has_voted``.  This prevents the TOCTOU race where
-    two concurrent requests both read ``has_voted=False`` before either
-    commits.  The lock serializes concurrent vote attempts for the same
-    user at the database level — the second request will block until the
-    first commits, then see ``has_voted=True`` and abort.
+    Double-vote prevention uses a two-table design:
 
-    On SQLite (development/testing) FOR UPDATE is a no-op, but SQLite's
-    write-lock-per-transaction provides equivalent serialization.
+    1. ``VoteReceipt`` — contains ``UNIQUE(user_id)``.  Records that a
+       user voted, but NOT which candidate.  The DB unique constraint is
+       the authoritative guard — it cannot be bypassed by application-
+       layer race conditions.
+
+    2. ``Vote`` — the anonymous ballot.  Contains the candidate choice
+       but NO user identity.
+
+    Both are inserted in the SAME transaction.  If a concurrent thread
+    manages to insert a duplicate receipt, the DB rejects the entire
+    transaction via IntegrityError, rolling back the anonymous ballot
+    as well.  This eliminates the TOCTOU race completely.
+
+    Additionally, ``SELECT ... FOR UPDATE`` is used on the User row as
+    a first line of defense (effective on MySQL/PostgreSQL; no-op on
+    SQLite).  The DB constraint is the safety net that catches anything
+    the lock misses.
 
     Threat model / limitations:
     ---------------------------
-    This is a server-side voting system.  The Flask process transiently
-    holds both the voter identity and the ballot content in memory during
-    the HTTP request.  True end-to-end verifiable ballot secrecy (blind
-    signatures, mix-nets, homomorphic tallying) requires a multi-party
-    cryptographic protocol beyond the scope of a monolithic web app.
-    What this design *does* guarantee is that the **persisted data** is
-    unlinkable — no post-hoc de-anonymization is possible.
-    """
-    from app.models import User, Vote
+    The VoteReceipt table records that user X voted, but NOT which
+    candidate they chose.  An attacker with DB access can see WHO voted
+    but not HOW they voted.  This is equivalent to a physical electoral
+    roll check-off — standard in real elections.
 
-    # --- Pessimistic lock: SELECT ... FOR UPDATE on the user row ---
-    # This serializes concurrent vote attempts for the same user_id.
-    # On MySQL/PostgreSQL this acquires a row-level exclusive lock.
-    # On SQLite the with_for_update() is a no-op but SQLite's
-    # single-writer model provides equivalent protection.
+    The server process transiently knows both identity and ballot during
+    the HTTP request.  True end-to-end verifiable ballot secrecy requires
+    multi-party cryptographic protocols beyond a monolithic web app.
+    """
+    from app.models import User, Vote, VoteReceipt
+
+    # --- Pessimistic lock (first line of defense) ---
+    # Effective on MySQL/PostgreSQL.  No-op on SQLite but the unique
+    # constraint below catches the race regardless.
     locked_user = (
         db.session.query(User)
         .filter(User.id == user.id)
@@ -61,10 +67,7 @@ def cast_anonymous_vote(db, user, candidate):
         raise AlreadyVotedError("User has already voted")
 
     # --- Create the anonymous ballot ---
-    # Random 256-bit nonce — no relationship to user identity.
     ballot_nonce = secrets.token_hex(32)
-
-    # Integrity hash covers the nonce + candidate + timestamp for audit.
     ts = datetime.now(timezone.utc).isoformat()
     payload = f"{ballot_nonce}:{candidate.id}:{ts}".encode()
     vote_hash = hashlib.sha256(payload).hexdigest()
@@ -78,11 +81,23 @@ def cast_anonymous_vote(db, user, candidate):
     )
     db.session.add(vote)
 
-    # Mark user as having voted under the same lock.
+    # --- Insert vote receipt (DB-level unique constraint) ---
+    # This is the authoritative double-vote guard.  If two threads race
+    # past the application check, the UNIQUE(user_id) constraint kills
+    # the second transaction.
+    receipt = VoteReceipt(user_id=user.id)
+    db.session.add(receipt)
+
+    # Mark user as having voted (application-level fast guard).
     locked_user.has_voted = True
 
     try:
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        raise AlreadyVotedError("Concurrent vote detected")
+        # Re-read user state after rollback to update has_voted
+        refreshed = db.session.get(User, user.id)
+        if refreshed and not refreshed.has_voted:
+            refreshed.has_voted = True
+            db.session.commit()
+        raise AlreadyVotedError("Concurrent vote detected — blocked by database constraint")

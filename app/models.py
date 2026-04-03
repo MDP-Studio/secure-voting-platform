@@ -316,7 +316,7 @@ class Candidate(db.Model):
         return f"<Candidate {self.name} - {self.position} ({self.region.name})>"
 
 
-# ---- Votes ----
+# ---- Votes (anonymous ballots) ----
 class Vote(db.Model):
     """
     Anonymous ballot record.
@@ -324,12 +324,13 @@ class Vote(db.Model):
     Each ballot carries a cryptographically random ``voter_token``
     (``secrets.token_hex(32)``) with NO mathematical relationship to
     the voter's identity.  There is no stored foreign key, HMAC, or
-    deterministic derivation linking a Vote back to a User — even a
-    full compromise of the database and all application secrets cannot
-    de-anonymize ballots.
+    deterministic derivation linking a Vote back to a User.
 
-    Double-vote prevention is enforced at the application level via
-    ``User.has_voted``, checked in the vote route before ballot creation.
+    Double-vote prevention is enforced by the ``VoteReceipt`` table
+    (UNIQUE constraint on user_id) which is inserted in the same
+    transaction as the ballot.  If a concurrent insert violates the
+    unique constraint, the entire transaction — including the anonymous
+    ballot — is rolled back.
 
     Limitation: the server process transiently knows both identity and
     ballot during the HTTP request.  True end-to-end verifiable anonymity
@@ -344,6 +345,30 @@ class Vote(db.Model):
     position = db.Column(db.String(120), nullable=False)
     vote_hash = db.Column(db.String(64))
     created_at = db.Column(db.DateTime, default=utcnow_naive)
+
+
+# ---- Vote Receipts (double-vote prevention) ----
+class VoteReceipt(db.Model):
+    """
+    Database-level one-vote-per-user enforcement.
+
+    This table stores ONLY the fact that a user has voted — NOT which
+    candidate they voted for.  The UNIQUE constraint on user_id is the
+    authoritative guard against double-voting, surviving any application-
+    level race conditions (TOCTOU).
+
+    Inserted in the same transaction as the anonymous Vote record.  If a
+    concurrent thread tries to insert a duplicate receipt, the DB rejects
+    the entire transaction, rolling back the ballot as well.
+    """
+    __tablename__ = "vote_receipt"
+    __table_args__ = (
+        db.UniqueConstraint('user_id', name='uq_vote_receipt_user'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    voted_at = db.Column(db.DateTime, default=utcnow_naive)
 
 @login_manager.user_loader
 def load_user(user_id):
