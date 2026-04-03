@@ -1,20 +1,12 @@
 from flask import Blueprint, jsonify, request, render_template_string, current_app
 from flask_login import login_required, current_user
 from app.security import signing_service
+from app.services.results_service import get_vote_tallies
+from datetime import datetime, timezone
 import json
 
 results = Blueprint('results', __name__)
 
-# --- Mock Data Store ---
-# In a real app, this would come from your database.
-ELECTION_RESULTS = {
-    "election_id": "FED2025",
-    "results": {
-        "PartyA": 5000000,
-        "PartyB": 4500000,
-        "PartyC": 1500000
-    }
-}
 SIGNED_RESULTS = {
     "data": None,
     "signature": None
@@ -31,16 +23,25 @@ def sign_election_results():
     if not getattr(current_user, "is_manager", False):
         return jsonify({"error": "Forbidden"}), 403
 
+    # Build results from actual vote tallies in the database
+    tallies = get_vote_tallies()
+    election_results = {
+        "election_id": "FED2025",
+        "signed_at": datetime.now(timezone.utc).isoformat(),
+        "results": tallies,
+        "total_votes": sum(tallies.values()),
+    }
+
     # Convert results dictionary to a consistent JSON string (bytes)
-    results_json = json.dumps(ELECTION_RESULTS, sort_keys=True, separators=(',', ':')).encode('utf-8')
-    
+    results_json = json.dumps(election_results, sort_keys=True, separators=(',', ':')).encode('utf-8')
+
     # Use the service to sign the data
     signature = signing_service.sign_data(results_json)
-    
+
     # Store the signed data and signature (hex-encoded for easy transport)
-    SIGNED_RESULTS['data'] = ELECTION_RESULTS
+    SIGNED_RESULTS['data'] = election_results
     SIGNED_RESULTS['signature'] = signature.hex()
-    
+
     return jsonify({"status": "success", "message": "Results have been digitally signed."})
 
 
@@ -87,10 +88,10 @@ def verify_election_results():
 def results_test_panel():
     """
     Renders a complete test page for signing, fetching, and verifying results.
+    Manager-only access.
     """
-    # In a real app, you would add a robust admin check here.
-    # if not current_user.is_admin:
-    #     return "Forbidden", 403
+    if not getattr(current_user, "is_manager", False):
+        return "Forbidden", 403
 
     html_template = """
     <!DOCTYPE html>

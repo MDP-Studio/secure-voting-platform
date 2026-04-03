@@ -212,8 +212,10 @@ def create_app(test_config=None):
     # import blueprints (auth and main routes already in repo)
     from app import auth
     from app.routes import main, dev_routes, health, candidates, registration, password, results
-    from app.routes.otp import otp_bp   # Create OTP blueprint
+    from app.routes.otp import otp_bp
     from app.routes.metrics import metrics_bp
+    from app.routes.password_reset import password_reset_bp
+    from app.routes.elections import elections_bp
     app.register_blueprint(auth.auth)
     app.register_blueprint(main.main)
     app.register_blueprint(dev_routes.dev)
@@ -221,8 +223,10 @@ def create_app(test_config=None):
     app.register_blueprint(candidates.candidates)
     app.register_blueprint(registration.registration)
     app.register_blueprint(results.results)
-    app.register_blueprint(otp_bp)      # Register OTP blueprint
-    app.register_blueprint(password.password_bp)  # Register password management blueprint
+    app.register_blueprint(otp_bp)
+    app.register_blueprint(password.password_bp)
+    app.register_blueprint(password_reset_bp)
+    app.register_blueprint(elections_bp)
 
     # expose Prometheus metrics at /metrics (metrics blueprint is optional)
     try:
@@ -236,6 +240,20 @@ def create_app(test_config=None):
     except Exception as e:
         app.logger.warning(f"Admin users blueprint not loaded: {e}")
 
+    # Register error handlers
+    from flask import render_template as _rt
+
+    @app.errorhandler(404)
+    def not_found(e):
+        return _rt('errors/404.html'), 404
+
+    @app.errorhandler(403)
+    def forbidden(e):
+        return _rt('errors/403.html'), 403
+
+    @app.errorhandler(500)
+    def server_error(e):
+        return _rt('errors/500.html'), 500
 
     # Route database operations to a bind based on user type and path
     @app.before_request

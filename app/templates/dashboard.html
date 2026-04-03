@@ -25,6 +25,22 @@
       {% endif %}
     {% endwith %}
 
+    <!-- Election status banner -->
+    {% if active_election and election_open %}
+      <div class="alert alert-success">
+        <i class="fas fa-check-circle me-1"></i>
+        <strong>{{ active_election.name }}</strong> is open for voting.
+        {% if active_election.close_at %}
+          Closes: {{ active_election.close_at.strftime('%d %B %Y at %H:%M UTC') }}
+        {% endif %}
+      </div>
+    {% elif not election_open %}
+      <div class="alert alert-secondary">
+        <i class="fas fa-info-circle me-1"></i>
+        No election is currently open for voting.
+      </div>
+    {% endif %}
+
     <!-- Already voted message -->
     {% if current_user.has_voted %}
       <div class="alert alert-success">

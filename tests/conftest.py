@@ -3,7 +3,7 @@ import os
 import tempfile
 from datetime import date
 from app import create_app, db
-from app.models import User, Candidate, Role, Region, ElectoralRoll
+from app.models import User, Candidate, Role, Region, ElectoralRoll, Election
 
 
 def pytest_addoption(parser):
@@ -75,13 +75,6 @@ def _create_test_data():
     
     # Create admin user (matching init_db.py)
     admin = User(
-        username='admin', 
-        email='admin@voting.com',
-        driver_lic_no='ADMIN001',
-        driver_lic_state='NSW',
-        account_status='approved'
-    )
-    admin = User(
         username='admin',
         email='admin@voting.com',
         driver_lic_no='DL123458',  # Valid driver license (checksum: 8)
@@ -129,5 +122,9 @@ def _create_test_data():
         Candidate(name='Mike Brown', party='Greens', position='House of Representatives', region=default_region),
     ]
     db.session.add_all(candidates)
-    
+
+    # Create an open election so voting tests work
+    election = Election(name='Test Election', status='open')
+    db.session.add(election)
+
     db.session.commit()

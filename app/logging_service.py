@@ -5,7 +5,7 @@ import hashlib
 import logging
 import shutil
 import stat
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Tuple, List
 
 
@@ -48,7 +48,7 @@ class HmacAuditHandler(logging.Handler):
         try:
             msg = self.format(record)
             payload = {
-                'timestamp': datetime.utcnow().isoformat() + 'Z',
+                'timestamp': datetime.now(timezone.utc).isoformat() + 'Z',
                 'level': record.levelname,
                 'logger': record.name,
                 'message': msg,
@@ -134,7 +134,7 @@ def seal_log(file_path: str) -> Optional[str]:
     try:
         if not os.path.exists(file_path):
             return None
-        ts = datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+        ts = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         dirname = os.path.dirname(file_path)
         base = os.path.basename(file_path)
         sealed = os.path.join(dirname, f"{base}.{ts}.sealed")

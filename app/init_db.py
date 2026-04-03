@@ -104,7 +104,7 @@ def init_database(app):
             ]:
                 get_or_create(Role, name=name, defaults={"description": desc})
 
-            for rname in ["Sydney", "VIC east", "VIC west", "NSW", "SA"]:
+            for rname in ["Sydney", "VIC east", "VIC west", "NSW", "SA", "QLD", "WA", "TAS", "ACT", "NT"]:
                 get_or_create(Region, name=rname)
 
             db.session.flush()  # ensure IDs exist for FKs
@@ -228,7 +228,7 @@ def init_database(app):
                 existing_count = User.query.filter(User.username.like('testvoter%')).count()
                 if existing_count == 0:
                     users = []
-                    ts = datetime.utcnow()
+                    ts = datetime.now(timezone.utc)
                     for voter_data in test_voters_data:
                         users.append(User(
                             username=voter_data['username'],
@@ -268,7 +268,7 @@ def init_database(app):
                                 voter_data['password'],
                                 method='pbkdf2:sha256:1' if is_testing_env else 'pbkdf2:sha256'
                             )
-                            test_user.password_changed_at = datetime.utcnow()
+                            test_user.password_changed_at = datetime.now(timezone.utc)
                             test_user.failed_login_attempts = 0
                             test_user.account_locked_until = None
                             db.session.add(test_user)
@@ -321,7 +321,7 @@ def init_database(app):
                 if existing_rolls == 0:
                     # Build a map of username -> user.id to avoid per-item queries
                     users_index = {u.username: u.id for u in User.query.filter(User.username.like('testvoter%')).all()}
-                    ts = datetime.utcnow()
+                    ts = datetime.now(timezone.utc)
                     bulk_rolls = []
                     for voter_data in test_voters_data:
                         uid = users_index.get(voter_data['username'])

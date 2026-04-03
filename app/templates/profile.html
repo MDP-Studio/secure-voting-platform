@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}My Profile - notAEC{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8 col-lg-6">
+    <h2 class="mb-4"><i class="fas fa-user-circle me-2"></i>My Profile</h2>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">Account Information</h5>
+      </div>
+      <div class="card-body">
+        <table class="table table-borderless mb-0">
+          <tr>
+            <th class="text-muted" style="width:40%">Username</th>
+            <td>{{ current_user.username }}</td>
+          </tr>
+          <tr>
+            <th class="text-muted">Email</th>
+            <td>
+              {{ current_user.email }}
+              {% if current_user.email_verified %}
+                <span class="badge bg-success ms-1"><i class="fas fa-check"></i> Verified</span>
+              {% else %}
+                <span class="badge bg-warning ms-1"><i class="fas fa-clock"></i> Not Verified</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th class="text-muted">Role</th>
+            <td><span class="badge bg-secondary">{{ current_user.role.name|title if current_user.role else 'Unknown' }}</span></td>
+          </tr>
+          <tr>
+            <th class="text-muted">Account Status</th>
+            <td>
+              {% if current_user.account_status == 'approved' %}
+                <span class="badge bg-success">Approved</span>
+              {% elif current_user.account_status == 'pending' %}
+                <span class="badge bg-warning">Pending Approval</span>
+              {% else %}
+                <span class="badge bg-danger">{{ current_user.account_status|title }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th class="text-muted">Account Created</th>
+            <td>{{ current_user.created_at.strftime('%d %B %Y') if current_user.created_at else 'N/A' }}</td>
+          </tr>
+          <tr>
+            <th class="text-muted">Password Last Changed</th>
+            <td>{{ current_user.password_changed_at.strftime('%d %B %Y') if current_user.password_changed_at else 'N/A' }}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    {% if enrolment %}
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-success text-white">
+        <h5 class="mb-0">Electoral Roll</h5>
+      </div>
+      <div class="card-body">
+        <table class="table table-borderless mb-0">
+          <tr>
+            <th class="text-muted" style="width:40%">Roll Number</th>
+            <td>{{ enrolment.roll_number }}</td>
+          </tr>
+          <tr>
+            <th class="text-muted">Region</th>
+            <td>{{ enrolment.region.name if enrolment.region else 'Not Assigned' }}</td>
+          </tr>
+          <tr>
+            <th class="text-muted">Enrolment Status</th>
+            <td>
+              {% if enrolment.status == 'active' %}
+                <span class="badge bg-success">Active</span>
+              {% else %}
+                <span class="badge bg-warning">{{ enrolment.status|title }}</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th class="text-muted">Verified</th>
+            <td>
+              {% if enrolment.verified %}
+                <span class="badge bg-success"><i class="fas fa-check"></i> Yes</span>
+              {% else %}
+                <span class="badge bg-warning"><i class="fas fa-clock"></i> Pending</span>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th class="text-muted">Has Voted</th>
+            <td>
+              {% if current_user.has_voted %}
+                <span class="badge bg-info"><i class="fas fa-check-double"></i> Yes</span>
+              {% else %}
+                <span class="badge bg-secondary">Not Yet</span>
+              {% endif %}
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+      <i class="fas fa-info-circle me-1"></i>
+      You are not enrolled in the electoral roll. Complete registration with your driver licence to enrol.
+    </div>
+    {% endif %}
+
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('password.change_password') }}" class="btn btn-outline-primary">
+        <i class="fas fa-key me-1"></i> Change Password
+      </a>
+      <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

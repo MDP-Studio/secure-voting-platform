@@ -55,6 +55,7 @@ class User(UserMixin, db.Model):
     # Admin approval state (String, no Enum)
     account_status = db.Column(db.String(20), nullable=False, default="pending")
 
+    email_verified = db.Column(db.Boolean, default=False, nullable=False)
     has_voted = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=utcnow_naive)
     
@@ -234,6 +235,32 @@ def _roll_set_lic_hash_before_insert(mapper, connection, target: "ElectoralRoll"
 @event.listens_for(ElectoralRoll, "before_update")
 def _roll_set_lic_hash_before_update(mapper, connection, target: "ElectoralRoll"):
     target.driver_license_hash = _hash_lic(getattr(target, "driver_license_number", None)) or target.driver_license_hash
+
+
+# ---- Elections ----
+class Election(db.Model):
+    __tablename__ = "election"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="draft")  # draft, open, closed
+    open_at = db.Column(db.DateTime, nullable=True)
+    close_at = db.Column(db.DateTime, nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow_naive)
+
+    @property
+    def is_open(self):
+        if self.status != "open":
+            return False
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if self.open_at and now < self.open_at:
+            return False
+        if self.close_at and now > self.close_at:
+            return False
+        return True
+
+    def __repr__(self):
+        return f"<Election {self.name} ({self.status})>"
 
 
 # ---- Candidates ----

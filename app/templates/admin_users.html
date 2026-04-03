@@ -87,6 +87,11 @@
               {% else %}
                 <span class="badge bg-secondary">{{ u.account_status|title }}</span>
               {% endif %}
+              {% if u.email_verified %}
+                <span class="badge bg-info ms-1" title="Email verified"><i class="fas fa-envelope-circle-check"></i></span>
+              {% else %}
+                <span class="badge bg-secondary ms-1" title="Email not verified"><i class="fas fa-envelope"></i></span>
+              {% endif %}
             </td>
             <td><small>{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '' }}</small></td>
             <td>
@@ -103,6 +108,13 @@
                     <button type="submit" class="btn btn-danger" title="Reject User"
                             onclick="return confirm('Reject this user?')">
                       <i class="fas fa-times"></i>
+                    </button>
+                  </form>
+                {% endif %}
+                {% if u.is_account_locked() %}
+                  <form action="{{ url_for('admin_users.unlock_user', user_id=u.id) }}" method="post" class="d-inline">
+                    <button type="submit" class="btn btn-warning" title="Unlock Account">
+                      <i class="fas fa-unlock"></i>
                     </button>
                   </form>
                 {% endif %}

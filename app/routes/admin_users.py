@@ -3,18 +3,9 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from app.models import User, ElectoralRoll
 from app import db
-from functools import wraps
+from app.utils.auth_decorators import admin_only
 
 admin_bp = Blueprint('admin_users', __name__, url_prefix="/admin")
-
-def admin_only(fn):
-    @wraps(fn)
-    def wrapped(*args, **kwargs):
-        if not current_user.is_authenticated or not current_user.is_manager:
-            flash("Access denied: Admin only.")
-            return redirect(url_for("main.dashboard"))
-        return fn(*args, **kwargs)
-    return wrapped
 
 def get_safe_page_limit(request_limit, max_limit=40):
     """
@@ -153,6 +144,19 @@ def reject_user(user_id):
     db.session.commit()
     flash(f"❌ User '{user.username}' rejected.")
     return redirect(url_for("admin_users.manage_users"))
+
+@admin_bp.route("/users/unlock/<int:user_id>", methods=["POST"])
+@login_required
+@admin_only
+def unlock_user(user_id):
+    """Manually unlock a locked user account."""
+    user = User.query.get_or_404(user_id)
+    user.failed_login_attempts = 0
+    user.account_locked_until = None
+    db.session.commit()
+    flash(f"Account '{user.username}' has been unlocked.", 'success')
+    return redirect(url_for("admin_users.manage_users"))
+
 
 @admin_bp.route("/voters")
 @login_required

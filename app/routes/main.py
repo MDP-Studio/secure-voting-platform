@@ -1,26 +1,13 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, session
-from app.helpers import flash_once
-from flask import Blueprint, jsonify, render_template, redirect, url_for, flash, request, abort
+from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, session, jsonify, current_app
 from flask_login import login_required, current_user
+from sqlalchemy.exc import IntegrityError
+from app.helpers import flash_once
 from app import db
 from app.models import Candidate, Region
-from functools import wraps
-from sqlalchemy.exc import IntegrityError
-from flask import current_app
+from app.utils.auth_decorators import roles_required
 from app.vote_service import cast_anonymous_vote
-main = Blueprint('main', __name__)
 
-# ----- tiny helpers -----
-def roles_required(*allowed):
-    def decorator(fn):
-        @wraps(fn)
-        @login_required
-        def wrapped(*args, **kwargs):
-            if not current_user.is_authenticated or not current_user.has_role(*allowed):
-                abort(403)
-            return fn(*args, **kwargs)
-        return wrapped
-    return decorator
+main = Blueprint('main', __name__)
 
 def user_is_eligible_to_vote(user):
     enrol = getattr(user, "enrolment", None)
@@ -41,6 +28,14 @@ def index():
     return redirect(url_for('auth.login'))
 
 
+@main.route('/profile')
+@login_required
+def profile():
+    """Show the current user's profile and enrolment info."""
+    enrolment = getattr(current_user, 'enrolment', None)
+    return render_template('profile.html', enrolment=enrolment)
+
+
 @main.route('/healthz')
 def healthz():
     """Basic health check endpoint for load balancers and monitoring."""
@@ -54,17 +49,21 @@ def dashboard():
     Dashboard shows candidates and eligibility messages.
     Template can use `eligible` to enable/disable vote UI.
     """
+    from app.models import Election
     candidates = Candidate.query.order_by(Candidate.name.asc()).all()
     eligible = user_is_eligible_to_vote(current_user)
 
-    # Eligibility details are shown directly in the template (avoid duplicating
-    # these as flashed messages to prevent the same text showing twice).
+    # Check if an election is currently open
+    active_election = Election.query.filter_by(status='open').first()
+    election_open = active_election and active_election.is_open
 
     return render_template(
         'dashboard.html',
         candidates=candidates,
         user=current_user,
-        eligible=eligible
+        eligible=eligible,
+        election_open=election_open,
+        active_election=active_election,
     )
 
 
@@ -113,6 +112,13 @@ def vote():
     - Enforces admin approval and eligibility.
     - Enforces one vote per user via DB unique constraint on Vote.user_id.
     """
+    # Check there is an active election
+    from app.models import Election
+    active_election = Election.query.filter_by(status='open').first()
+    if not active_election or not active_election.is_open:
+        flash_once('No election is currently open for voting.', 'error')
+        return redirect(url_for("main.dashboard"))
+
     # Explicit approval gate (clear message)
     if not getattr(current_user, "is_approved", False):
         flash_once("Your account is pending admin approval.")
@@ -163,49 +169,17 @@ def results():
         flash_once('Access denied')
         return redirect(url_for('main.dashboard'))
 
-    # Aggregate counts from the voters bind exclusively to avoid cross-bind JOINs.
-    # We query using the voters engine directly via SQL, since Vote is bound
-    # to 'voters' while Candidate may be accessed via 'admin' in this route.
-    try:
-        from sqlalchemy import text
-        voters_engine = db.engines.get('voters')
-        if voters_engine is None:
-            raise RuntimeError("Voters engine not configured")
-        with voters_engine.connect() as conn:
-            # Prefer secure read-only surface via view; fallback to join if missing
-            try:
-                res = conn.execute(text(
-                    """
-                    SELECT name, votes
-                    FROM vote_counts
-                    ORDER BY votes DESC, name ASC
-                    """
-                ))
-            except Exception:
-                res = conn.execute(text(
-                    """
-                    SELECT c.name AS name, COUNT(v.id) AS votes
-                    FROM candidate c
-                    LEFT JOIN vote v ON v.candidate_id = c.id
-                    GROUP BY c.id, c.name
-                    ORDER BY votes DESC, c.name ASC
-                    """
-                ))
-            rows = list(res)
-        votes = {r[0]: int(r[1] or 0) for r in rows}
-    except Exception as e:
-        current_app.logger.warning(f"Failed to load results from voters bind: {e}")
-        # Fallback: show zero counts for candidates from current bind
-        votes = {c.name: 0 for c in Candidate.query.all()}
+    from app.services.results_service import get_vote_tallies
+    from datetime import datetime, timezone
 
+    votes = get_vote_tallies()
     total_votes = sum(votes.values())
 
-    from datetime import datetime
     return render_template(
         'results.html',
         votes=votes,
         total_votes=total_votes,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
         admin_user=current_user.username
     )
 

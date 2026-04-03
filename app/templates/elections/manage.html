@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Manage Elections - notAEC{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h2 class="mb-4"><i class="fas fa-ballot-check me-2"></i>Election Management</h2>
+
+  <!-- Create Election -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0">Create New Election</h5>
+    </div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('elections.create_election') }}" class="row g-3">
+        <div class="col-md-4">
+          <label for="name" class="form-label">Election Name</label>
+          <input type="text" class="form-control" id="name" name="name"
+                 placeholder="e.g. Federal Election 2025" required>
+        </div>
+        <div class="col-md-3">
+          <label for="open_at" class="form-label">Opens At (optional)</label>
+          <input type="datetime-local" class="form-control" id="open_at" name="open_at">
+        </div>
+        <div class="col-md-3">
+          <label for="close_at" class="form-label">Closes At (optional)</label>
+          <input type="datetime-local" class="form-control" id="close_at" name="close_at">
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="fas fa-plus me-1"></i> Create
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Elections List -->
+  {% if elections %}
+  <div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+      <thead class="table-dark">
+        <tr>
+          <th>Election</th>
+          <th>Status</th>
+          <th>Opens</th>
+          <th>Closes</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for e in elections %}
+        <tr>
+          <td><strong>{{ e.name }}</strong></td>
+          <td>
+            {% if e.status == 'open' %}
+              {% if e.is_open %}
+                <span class="badge bg-success"><i class="fas fa-check-circle"></i> Open</span>
+              {% else %}
+                <span class="badge bg-warning"><i class="fas fa-clock"></i> Scheduled</span>
+              {% endif %}
+            {% elif e.status == 'closed' %}
+              <span class="badge bg-danger"><i class="fas fa-lock"></i> Closed</span>
+            {% else %}
+              <span class="badge bg-secondary"><i class="fas fa-pencil"></i> Draft</span>
+            {% endif %}
+          </td>
+          <td>{{ e.open_at.strftime('%d %b %Y %H:%M') if e.open_at else '—' }}</td>
+          <td>{{ e.close_at.strftime('%d %b %Y %H:%M') if e.close_at else '—' }}</td>
+          <td>{{ e.created_at.strftime('%d %b %Y') if e.created_at else '' }}</td>
+          <td>
+            {% if e.status == 'draft' %}
+              <form action="{{ url_for('elections.open_election', election_id=e.id) }}" method="post" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-success" title="Open Election"
+                        onclick="return confirm('Open this election for voting?')">
+                  <i class="fas fa-play"></i> Open
+                </button>
+              </form>
+            {% elif e.status == 'open' %}
+              <form action="{{ url_for('elections.close_election', election_id=e.id) }}" method="post" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-danger" title="Close Election"
+                        onclick="return confirm('Close this election? No more votes will be accepted.')">
+                  <i class="fas fa-stop"></i> Close
+                </button>
+              </form>
+            {% else %}
+              <span class="text-muted">Finalized</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-info text-center">
+    <i class="fas fa-info-circle me-1"></i> No elections created yet. Use the form above to create one.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

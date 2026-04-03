@@ -1,22 +1,10 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, abort
+from flask import Blueprint, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from app import db
 from app.models import Candidate, Region
-from functools import wraps
+from app.utils.auth_decorators import roles_required
 
 candidates = Blueprint('candidates', __name__)
-
-# ----- tiny helpers -----
-def roles_required(*allowed):
-    def decorator(fn):
-        @wraps(fn)
-        @login_required
-        def wrapped(*args, **kwargs):
-            if not current_user.is_authenticated or not current_user.has_role(*allowed):
-                abort(403)
-            return fn(*args, **kwargs)
-        return wrapped
-    return decorator
 
 # candidate management for delegates and managers
 @candidates.route("/candidates/new", methods=["POST"])
@@ -49,12 +37,12 @@ def create_candidate():
 def update_candidate(candidate_id):
     c = Candidate.query.get_or_404(candidate_id)
 
-    # optional region guard for delegates
-    # if current_user.is_delegate:
-    #     enrol = getattr(current_user, "enrolment", None)
-    #     if not enrol or enrol.region_id != c.region_id:
-    #         flash("Delegates can only edit candidates in their region.")
-    #         return redirect(url_for("main.delegate_dashboard"))
+    # Region guard: delegates can only edit candidates in their region
+    if current_user.has_role("delegate") and not current_user.has_role("manager"):
+        enrol = getattr(current_user, "enrolment", None)
+        if not enrol or enrol.region_id != c.region_id:
+            flash("Delegates can only edit candidates in their region.")
+            return redirect(url_for("main.delegate_dashboard"))
 
     # simple update (you can replace with a proper edit form later)
     name = request.form.get("name")
@@ -83,12 +71,12 @@ def update_candidate(candidate_id):
 def delete_candidate(candidate_id):
     c = Candidate.query.get_or_404(candidate_id)
 
-    # optional region guard for delegates
-    # if current_user.is_delegate:
-    #     enrol = getattr(current_user, "enrolment", None)
-    #     if not enrol or enrol.region_id != c.region_id:
-    #         flash("Delegates can only delete candidates in their region.")
-    #         return redirect(url_for("main.delegate_dashboard"))
+    # Region guard: delegates can only delete candidates in their region
+    if current_user.has_role("delegate") and not current_user.has_role("manager"):
+        enrol = getattr(current_user, "enrolment", None)
+        if not enrol or enrol.region_id != c.region_id:
+            flash("Delegates can only delete candidates in their region.")
+            return redirect(url_for("main.delegate_dashboard"))
 
     db.session.delete(c)
     db.session.commit()

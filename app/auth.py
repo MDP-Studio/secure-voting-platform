@@ -31,20 +31,6 @@ auth = Blueprint('auth', __name__)
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 EMAIL_RE    = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-def is_strong_password(pw: str) -> bool:
-    """
-    Password policy for registration:
-      - At least 12 characters
-      - At least 1 uppercase letter (A-Z)
-      - At least 1 lowercase letter (a-z)
-      - At least 1 special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
-    """
-    if not pw or len(pw) < 12:
-        return False
-    has_upper = any(c.isupper() for c in pw)
-    has_lower = any(c.islower() for c in pw)
-    has_special = any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in pw)
-    return has_upper and has_lower and has_special
 
 def _checksum11(s: str) -> int:
     """
@@ -94,13 +80,13 @@ def _map_state_to_region(state_code: str | None) -> Region | None:
         return None
     mapping = {
         "NSW": "Sydney",
-        "VIC": "VIC east",  # change to your actual seeded region name if needed
-        "QLD": "NSW",
+        "VIC": "VIC east",
+        "QLD": "QLD",
         "SA":  "SA",
-        "WA":  "NSW",
-        "TAS": "NSW",
-        "ACT": "NSW",
-        "NT":  "NSW",
+        "WA":  "WA",
+        "TAS": "TAS",
+        "ACT": "ACT",
+        "NT":  "NT",
     }
     name = mapping.get(state_code.upper())
     return Region.query.filter_by(name=name).first() if name else None
@@ -484,9 +470,6 @@ def register():
         if password != confirm:
             flash_once("Passwords do not match")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
-        if not is_strong_password(password):
-            flash_once("Password too weak: must be 8+ chars with letters and digits")
-        
         # Password validation has been centralized in validate_password_strength()
         # (replacing is_strong_password()) to ensure consistent password policy enforcement.
         is_valid, error_message = validate_password_strength(password)

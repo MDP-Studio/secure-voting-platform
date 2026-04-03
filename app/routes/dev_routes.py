@@ -4,7 +4,6 @@ This file contains development-only routes that should NEVER be enabled in produ
 """
 
 from datetime import timezone
-from flask import Blueprint, render_template, request, jsonify
 from flask import Blueprint, render_template, request, jsonify, g
 from app import db
 from app.models import User, Candidate, Vote

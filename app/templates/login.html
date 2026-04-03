@@ -145,17 +145,10 @@
       </button>
       <div class="collapse navbar-collapse" id="navMain">
         <ul class="navbar-nav me-auto">
-          <li class="nav-item"><a class="nav-link" href="#">Elections</a></li>
-          <li class="nav-item"><a class="nav-link" href="#">Results</a></li>
-          <li class="nav-item"><a class="nav-link" href="#">Help</a></li>
-          <li class="nav-item"><a class="nav-link" href="#">About</a></li>
         </ul>
         <div class="d-flex gap-2">
-          <a href="#" class="btn btn-outline-primary">Observer</a>
-          <a href="#" class="btn btn-primary">Admin</a>
-          <a href="/dev/dashboard" class="btn btn-sm btn-outline-secondary" title="Developer Dashboard (localhost only)">
-            <i class="fas fa-cogs"></i> Dev
-          </a>
+          <a href="{{ url_for('auth.login') }}" class="btn btn-outline-primary">Sign In</a>
+          <a href="{{ url_for('registration.register') }}" class="btn btn-primary">Register</a>
         </div>
       </div>
     </div>
@@ -232,7 +225,7 @@
               <input type="password" class="form-control" id="secret" name="password" placeholder="Enter password" required minlength="6" autocomplete="current-password" />
             </div>
             <div class="invalid-feedback">Please enter at least 6 characters.</div>
-            <div class="form-text text-end"><a href="#" class="text-decoration-none">Forgot password?</a></div>
+            <div class="form-text text-end"><a href="{{ url_for('password_reset.forgot_password') }}" class="text-decoration-none">Forgot password?</a></div>
           </div>
 
           <!-- 2FA Token (optional) -->
@@ -282,9 +275,6 @@
           <div class="d-grid gap-2">
             <a href="{{ url_for('registration.register') }}" class="btn btn-outline-primary">
               <i class="fa-solid fa-id-card-clip me-1"></i> Register as a Voter
-            </a>
-            <a href="#" class="btn btn-outline-primary">
-              <i class="fa-solid fa-location-crosshairs me-1"></i> Track My Ballot
             </a>
           </div>
         </form>

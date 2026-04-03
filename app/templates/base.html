@@ -30,9 +30,14 @@
               </li>
 
               {% if current_user.is_manager %}
-              <!-- Admin Users page -->
               <li class="nav-item">
                 <a class="nav-link" href="{{ url_for('admin_users.manage_users') }}">Admin Users</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('elections.list_elections') }}">Elections</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('main.results') }}">Results</a>
               </li>
               {% endif %}
 
@@ -41,13 +46,19 @@
                 <a class="nav-link" href="{{ url_for('main.delegate_dashboard') }}">Delegate</a>
               </li>
               {% endif %}
+
+              <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('password.change_password') }}">Change Password</a>
+              </li>
             {% endif %}
           </ul>
 
           <ul class="navbar-nav ms-auto">
             {% if current_user.is_authenticated %}
               <li class="nav-item">
-                <span class="navbar-text me-3">Hi, {{ current_user.username }}</span>
+                <a class="nav-link" href="{{ url_for('main.profile') }}">
+                  <i class="fas fa-user-circle me-1"></i>{{ current_user.username }}
+                </a>
               </li>
               <li class="nav-item">
                 <a class="btn btn-outline-secondary" href="{{ url_for('auth.logout') }}">
@@ -69,11 +80,19 @@
 
     <!-- Flash messages (global) -->
     <div class="container">
-      {% with messages = get_flashed_messages() %}
+      {% with messages = get_flashed_messages(with_categories=True) %}
         {% if messages %}
           <div class="mb-3">
-            {% for message in messages %}
-              <div class="alert alert-info" role="alert">{{ message }}</div>
+            {% for category, message in messages %}
+              {% if category == 'error' %}
+                <div class="alert alert-danger" role="alert">{{ message }}</div>
+              {% elif category == 'warning' %}
+                <div class="alert alert-warning" role="alert">{{ message }}</div>
+              {% elif category == 'success' %}
+                <div class="alert alert-success" role="alert">{{ message }}</div>
+              {% else %}
+                <div class="alert alert-info" role="alert">{{ message }}</div>
+              {% endif %}
             {% endfor %}
           </div>
         {% endif %}

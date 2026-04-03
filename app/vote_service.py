@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 from sqlalchemy.exc import IntegrityError
 
@@ -17,7 +17,7 @@ def cast_anonymous_vote(db, user, candidate):
     from app.models import Vote
 
     # Create a reproducible-but-unique hash for this vote event
-    payload = f"{user.id}:{candidate.id}:{datetime.utcnow().isoformat()}".encode()
+    payload = f"{user.id}:{candidate.id}:{datetime.now(timezone.utc).isoformat()}".encode()
     vote_hash = hashlib.sha256(payload).hexdigest()
 
     vote = Vote(
@@ -25,7 +25,7 @@ def cast_anonymous_vote(db, user, candidate):
         candidate_id=candidate.id,
         position=candidate.position,
         vote_hash=vote_hash,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.session.add(vote)
 
