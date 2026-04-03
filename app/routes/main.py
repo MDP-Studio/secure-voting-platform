@@ -5,7 +5,7 @@ from app.helpers import flash_once
 from app import db
 from app.models import Candidate, Region
 from app.utils.auth_decorators import roles_required
-from app.vote_service import cast_anonymous_vote
+from app.vote_service import cast_anonymous_vote, AlreadyVotedError
 
 main = Blueprint('main', __name__)
 
@@ -150,15 +150,17 @@ def vote():
         flash_once('You can only vote for candidates in your region.')
         return redirect(url_for("main.dashboard"))
 
-    # Use a single atomic transaction via service: insert Ballot then Attendance
+    # Cast vote with pessimistic row lock to prevent TOCTOU race condition
     try:
         cast_anonymous_vote(db, current_user, candidate)
+    except AlreadyVotedError:
+        flash_once('You have already voted.')
+        return redirect(url_for('main.dashboard'))
     except IntegrityError:
-        # Unique(election_id, voter_key) enforces one vote per person per election
         db.session.rollback()
         flash_once('You have already voted.')
         return redirect(url_for('main.dashboard'))
-    
+
     flash_once('Vote cast successfully!')
     return redirect(url_for('main.dashboard'))
 
