@@ -321,21 +321,24 @@ class Vote(db.Model):
     """
     Anonymous ballot record.
 
-    The voter's identity is NOT stored here. Instead, a one-way blind
-    voter_token (HMAC of user-id + app secret) enforces one-vote-per-person
-    at the DB level while making it computationally infeasible to reverse
-    the token back to a user without the application secret.
+    Each ballot carries a cryptographically random ``voter_token``
+    (``secrets.token_hex(32)``) with NO mathematical relationship to
+    the voter's identity.  There is no stored foreign key, HMAC, or
+    deterministic derivation linking a Vote back to a User — even a
+    full compromise of the database and all application secrets cannot
+    de-anonymize ballots.
 
-    The user.has_voted flag is set separately as a fast application-level
-    guard, but the unique constraint on voter_token is the authoritative
-    enforcement.
+    Double-vote prevention is enforced at the application level via
+    ``User.has_voted``, checked in the vote route before ballot creation.
+
+    Limitation: the server process transiently knows both identity and
+    ballot during the HTTP request.  True end-to-end verifiable anonymity
+    (blind signatures, homomorphic tallying) requires a multi-party
+    protocol beyond the scope of a server-side web application.
     """
     __tablename__ = "vote"
-    __table_args__ = (
-        db.UniqueConstraint('voter_token', name='uq_vote_voter_token'),
-    )
     id = db.Column(db.Integer, primary_key=True)
-    voter_token = db.Column(db.String(64), nullable=False, index=True)
+    voter_token = db.Column(db.String(64), nullable=False)
     candidate_id = db.Column(db.Integer, db.ForeignKey("candidate.id", ondelete="CASCADE"),
                              nullable=False, index=True)
     position = db.Column(db.String(120), nullable=False)
