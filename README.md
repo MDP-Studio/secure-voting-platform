@@ -6,13 +6,17 @@ Built as part of a Secure Software Systems course — originally a team project,
 
 ## Key Security Features
 
+- **RSA Blind Signatures** — Cryptographic voter anonymity: the server signs ballots without seeing their contents. Votes are cast anonymously via a separate endpoint with no cookies or session data (Chaum 1983, Bellare-Rogaway 1996 FDH proof)
+- **CSRF Protection** — Per-session tokens validated on all state-changing requests
 - **PII Encryption at Rest** — Voter personal data encrypted with ChaCha20-Poly1305 (AEAD)
+- **Blind Indexing** — Driver licence lookups use HMAC-SHA256 with pepper (not raw SHA-256)
 - **Web Application Firewall** — OWASP ModSecurity CRS via nginx reverse proxy
 - **Cryptographic Result Signing** — Election results signed via HashiCorp Vault Transit engine (non-repudiation)
 - **HMAC-Backed Audit Logging** — Tamper-evident audit trail with chain verification
 - **Role-Based Access Control** — Voter, Delegate, Manager roles with enforced permissions
 - **Account Security** — Lockout after 5 failed attempts, 90-day password expiry, 12-char minimum with complexity requirements
-- **Multi-Factor Authentication** — Email-based OTP with 5-minute expiry
+- **Two-Step MFA** — Server-enforced email OTP after password validation (separate page, not bypassable)
+- **Pessimistic Locking** — `SELECT ... FOR UPDATE` + `VoteReceipt(UNIQUE user_id)` prevents TOCTOU double-voting
 - **Geo-IP Filtering** — Country-level access restriction via MaxMind GeoIP2
 - **Rate Limiting** — Per-endpoint limits (voting: 2 req/min, general: 500 req/min)
 - **Election State Management** — Draft/open/close lifecycle with time-based enforcement
@@ -52,6 +56,24 @@ Built as part of a Secure Software Systems course — originally a team project,
 ```
 
 **Split Database Connections:** Admin and voter operations route to separate MySQL users with different permission sets, enforced at the ORM session level.
+
+### Anonymous Voting Protocol (RSA Blind Signatures)
+
+```
+Phase 1 — Authenticated (server sees voter, NOT ballot):
+  Voter ──[blinded ballot]──► Server signs blind data
+                               Issues VoteReceipt (UNIQUE user_id)
+  Voter ◄──[blind signature]── Server never sees candidate choice
+
+Phase 2 — Anonymous (server sees ballot, NOT voter):
+  Voter unblinds signature (client-side BigInt math)
+  Random 5-30s delay (timing attack mitigation)
+  Voter ──[ballot + signature]──► /vote/cast (NO cookies, NO session)
+                                   Server verifies signature
+                                   Stores anonymous Vote record
+```
+
+The server signs the ballot without seeing its contents. The voter casts the ballot without revealing their identity. Even a fully compromised server cannot link votes to voters — the cryptographic blinding makes the two phases unlinkable.
 
 ## Quick Start
 

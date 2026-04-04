@@ -370,6 +370,32 @@ class VoteReceipt(db.Model):
                         nullable=False, index=True)
     voted_at = db.Column(db.DateTime, default=utcnow_naive)
 
+# ---- Blind Signature Tokens ----
+class BlindSignatureToken(db.Model):
+    """
+    Tracks blind signature token issuance for the anonymous voting protocol.
+
+    Issued during Phase 1 (authenticated token request). The voter's
+    identity is linked to the token, but the ballot content is blinded
+    and invisible to the server. During Phase 2 (anonymous ballot cast),
+    the token is matched via ballot_nonce_hash and marked redeemed.
+
+    UNIQUE(user_id) prevents a voter from obtaining multiple tokens.
+    UNIQUE(ballot_nonce_hash) prevents replay of the same ballot.
+    """
+    __tablename__ = "blind_signature_token"
+    __table_args__ = (
+        db.UniqueConstraint('user_id', name='uq_blind_sig_token_user'),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    ballot_nonce_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    issued_at = db.Column(db.DateTime, default=utcnow_naive)
+    redeemed = db.Column(db.Boolean, default=False, nullable=False)
+    redeemed_at = db.Column(db.DateTime, nullable=True)
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))

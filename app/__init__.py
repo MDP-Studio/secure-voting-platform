@@ -294,6 +294,13 @@ def create_app(test_config=None):
 
     # create database tables if they don't exist (Flask-SQLAlchemy will
     # handle creating tables for the default and any configured binds)
+    # Generate blind-signing RSA keypair (no-op if already exists)
+    try:
+        from app.security.blind_signature import generate_blind_signing_keypair
+        generate_blind_signing_keypair(app.instance_path)
+    except Exception as e:
+        app.logger.warning(f"Blind signature keypair generation: {e}")
+
     with app.app_context():
         # In testing, disable Vote.__bind_key__ so Vote shares the default metadata
         if app.config.get('TESTING'):

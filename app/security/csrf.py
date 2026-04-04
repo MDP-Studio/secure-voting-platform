@@ -75,3 +75,5 @@ def init_csrf(app):
     csrf_exempt('health.live')
     csrf_exempt('auth.login_nonce')
     csrf_exempt('otp.send_otp')  # Already requires authenticated session
+    csrf_exempt('main.cast_anonymous_ballot')     # Anonymous endpoint (no cookies)
+    csrf_exempt('main.blind_signing_public_key')  # Public GET

@@ -164,6 +164,168 @@ def vote():
     flash_once('Vote cast successfully!')
     return redirect(url_for('main.dashboard'))
 
+
+# =====================================================================
+# Blind Signature Voting Protocol
+# =====================================================================
+
+@main.route('/vote/blind-key')
+def blind_signing_public_key():
+    """Public endpoint: return RSA public key components for client-side blinding."""
+    from app.security.blind_signature import get_public_key_components
+    return jsonify(get_public_key_components(current_app.instance_path))
+
+
+@main.route('/vote/request-token', methods=['POST'])
+@login_required
+def request_blind_token():
+    """
+    Phase 1 (authenticated): Sign a blinded ballot.
+
+    The voter sends a blinded ballot and a nonce hash. The server:
+    - Verifies eligibility (same checks as /vote)
+    - Signs the blinded data WITHOUT seeing the ballot contents
+    - Issues a VoteReceipt (double-vote prevention)
+    - Returns the blind signature
+
+    The server sees: blinded_ballot (random-looking int), nonce_hash.
+    The server does NOT see: candidate_id, actual ballot.
+    """
+    from app.models import Election, User, VoteReceipt, BlindSignatureToken
+    from app.security.blind_signature import blind_sign
+
+    data = request.get_json(silent=True)
+    if not data or 'blinded_ballot' not in data or 'nonce_hash' not in data:
+        return jsonify({"error": "Missing blinded_ballot or nonce_hash"}), 400
+
+    # Eligibility checks (same as /vote)
+    active_election = Election.query.filter_by(status='open').first()
+    if not active_election or not active_election.is_open:
+        return jsonify({"error": "No election is currently open"}), 400
+
+    if not getattr(current_user, "is_approved", False):
+        return jsonify({"error": "Account pending approval"}), 403
+
+    if not user_is_eligible_to_vote(current_user):
+        return jsonify({"error": "Not eligible to vote"}), 403
+
+    # Pessimistic lock on user row
+    locked_user = (
+        db.session.query(User)
+        .filter(User.id == current_user.id)
+        .with_for_update()
+        .first()
+    )
+    if not locked_user or locked_user.has_voted:
+        return jsonify({"error": "Already voted"}), 409
+
+    try:
+        blinded_int = int(data['blinded_ballot'], 16)
+        nonce_hash = data['nonce_hash']
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid blinded_ballot format"}), 400
+
+    # Issue receipt + token
+    receipt = VoteReceipt(user_id=current_user.id)
+    token = BlindSignatureToken(
+        user_id=current_user.id,
+        ballot_nonce_hash=nonce_hash,
+    )
+    db.session.add(receipt)
+    db.session.add(token)
+    locked_user.has_voted = True
+
+    try:
+        db.session.flush()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Already voted"}), 409
+
+    # Sign the blinded ballot
+    blind_sig = blind_sign(blinded_int, current_app.instance_path)
+    db.session.commit()
+
+    return jsonify({"blind_signature": hex(blind_sig)})
+
+
+@main.route('/vote/cast', methods=['POST'])
+def cast_anonymous_ballot():
+    """
+    Phase 2 (anonymous): Submit an unblinded ballot + signature.
+
+    NO authentication required. NO cookies sent (client uses credentials:'omit').
+    The server verifies the signature proves the ballot was authorized by
+    the blind-signing key, but CANNOT determine which voter submitted it.
+    """
+    import json as _json
+    import secrets
+    import hashlib
+    from app.models import Vote, BlindSignatureToken
+    from app.security.blind_signature import verify_unblinded_signature
+
+    data = request.get_json(silent=True)
+    if not data or 'ballot' not in data or 'signature' not in data:
+        return jsonify({"error": "Missing ballot or signature"}), 400
+
+    try:
+        ballot_hex = data['ballot']
+        ballot_bytes = bytes.fromhex(ballot_hex)
+        ballot_json = _json.loads(ballot_bytes.decode('utf-8'))
+        sig_int = int(data['signature'], 16)
+    except (ValueError, TypeError, _json.JSONDecodeError):
+        return jsonify({"error": "Invalid ballot or signature format"}), 400
+
+    # Verify blind signature
+    if not verify_unblinded_signature(ballot_bytes, sig_int, current_app.instance_path):
+        return jsonify({"error": "Invalid signature"}), 403
+
+    # Extract ballot fields
+    candidate_id = ballot_json.get('candidate_id')
+    nonce = ballot_json.get('nonce')
+    if not candidate_id or not nonce:
+        return jsonify({"error": "Malformed ballot"}), 400
+
+    # Verify candidate exists
+    candidate = db.session.get(Candidate, candidate_id)
+    if not candidate:
+        return jsonify({"error": "Invalid candidate"}), 400
+
+    # Replay prevention: find and redeem the token via nonce hash
+    nonce_hash = hashlib.sha256(nonce.encode('utf-8')).hexdigest()
+    token = BlindSignatureToken.query.filter_by(
+        ballot_nonce_hash=nonce_hash,
+        redeemed=False,
+    ).first()
+    if not token:
+        return jsonify({"error": "Token already redeemed or invalid"}), 409
+
+    from datetime import datetime, timezone
+    token.redeemed = True
+    token.redeemed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    # Store anonymous ballot
+    ballot_nonce = secrets.token_hex(32)
+    ts = datetime.now(timezone.utc).isoformat()
+    vote_hash = hashlib.sha256(f"{ballot_nonce}:{candidate_id}:{ts}".encode()).hexdigest()
+
+    vote = Vote(
+        voter_token=ballot_nonce,
+        candidate_id=candidate_id,
+        position=candidate.position,
+        vote_hash=vote_hash,
+        created_at=datetime.now(timezone.utc),
+    )
+    db.session.add(vote)
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Vote could not be recorded"}), 500
+
+    return jsonify({"status": "ok", "message": "Your anonymous ballot has been recorded."})
+
+
 @main.route("/results")
 @roles_required("manager")  # managers only
 def results():
