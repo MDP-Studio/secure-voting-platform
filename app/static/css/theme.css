@@ -60,9 +60,6 @@ a:hover { color: var(--sv-primary-dark); }
   gap: .5rem;
 }
 .sv-navbar .navbar-brand:hover { color: rgba(255,255,255,.85); }
-.sv-navbar .navbar-brand img {
-  filter: brightness(0) invert(1);
-}
 .sv-navbar .nav-link {
   color: rgba(255,255,255,.75);
   font-weight: 500;
@@ -79,14 +76,16 @@ a:hover { color: var(--sv-primary-dark); }
 .sv-navbar .nav-link i { opacity: .7; }
 .sv-navbar .nav-link:hover i { opacity: 1; }
 .sv-navbar .btn-outline-secondary {
-  color: #fff;
-  border-color: rgba(255,255,255,.4);
+  color: var(--sv-primary-dark);
+  background: #fff;
+  border-color: #fff;
   font-size: .8125rem;
+  font-weight: 500;
 }
 .sv-navbar .btn-outline-secondary:hover {
-  background: rgba(255,255,255,.15);
-  border-color: rgba(255,255,255,.6);
-  color: #fff;
+  background: rgba(255,255,255,.85);
+  border-color: rgba(255,255,255,.85);
+  color: var(--sv-primary-dark);
 }
 .sv-navbar .btn-outline-primary,
 .sv-navbar .btn-primary {
