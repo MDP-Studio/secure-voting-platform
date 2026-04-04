@@ -122,6 +122,10 @@ docker-compose up --build
 - Manage candidates within assigned region (region guards enforced)
 - View regional electoral roll data
 
+### Accessibility
+- **Text-to-Speech** — floating TTS button (bottom-right) using the browser's Web Speech API. Click any text to hear it read aloud, or "Read Page" for the full content. Keyboard shortcut: `Alt+T`
+- **Skip-to-content** link, ARIA landmarks, focus indicators, reduced-motion support, high-contrast mode
+
 ### Security Controls
 - Password reset via signed, time-limited email tokens (30-min expiry)
 - Generic responses to prevent email enumeration

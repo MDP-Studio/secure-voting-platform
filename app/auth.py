@@ -322,10 +322,8 @@ def _complete_login(user, next_url=None):
     login_user(user)
     token = issue_token(user.id)
 
-    # Role-based redirect
-    if user.is_manager:
-        dashboard_url = url_for('dev.dev_dashboard')
-    elif user.is_delegate:
+    # Role-based redirect — all roles go to main dashboard
+    if user.is_delegate:
         dashboard_url = url_for('main.delegate_dashboard')
     else:
         dashboard_url = url_for('main.dashboard')
