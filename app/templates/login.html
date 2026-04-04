@@ -79,22 +79,6 @@
             </div>
           </div>
 
-          <!-- OTP (collapsed by default — only relevant when MFA is enabled) -->
-          <div class="mb-3">
-            <a class="text-decoration-none" style="font-size:.8rem" data-bs-toggle="collapse" href="#otpSection" role="button" aria-expanded="false" aria-controls="otpSection">
-              <i class="fas fa-key me-1"></i>Have an authenticator code?
-            </a>
-            <div class="collapse mt-2" id="otpSection">
-              <div class="d-flex gap-2">
-                <input type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
-                       class="form-control" id="totp" name="totp" placeholder="6-digit code" autocomplete="one-time-code">
-                <button class="btn btn-outline-primary btn-sm text-nowrap" type="button" id="btnGetOtp">
-                  <i class="fas fa-paper-plane me-1"></i>Get OTP
-                </button>
-              </div>
-            </div>
-          </div>
-
           {% if config.get('CF_TURNSTILE_SITEKEY') %}
           <div class="mb-3">
             <div class="cf-turnstile" data-sitekey="{{ config.get('CF_TURNSTILE_SITEKEY') }}"></div>
@@ -128,8 +112,6 @@
       const btnSubmit = document.getElementById('btnSubmit');
       const togglePwd = document.getElementById('togglePwd');
       const secret = document.getElementById('secret');
-      const btnGetOtp = document.getElementById('btnGetOtp');
-
       form?.addEventListener('submit', function (e) {
         if (!form.checkValidity()) {
           e.preventDefault();
@@ -147,29 +129,6 @@
         const isPwd = secret.type === 'password';
         secret.type = isPwd ? 'text' : 'password';
         togglePwd.innerHTML = isPwd ? '<i class="fa-regular fa-eye-slash"></i> Hide' : '<i class="fa-regular fa-eye"></i> Show';
-      });
-
-      btnGetOtp?.addEventListener('click', async () => {
-        btnGetOtp.disabled = true;
-        const original = btnGetOtp.innerHTML;
-        btnGetOtp.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-        try {
-          const fd = new FormData();
-          fd.append("username", document.querySelector("#voter_id").value.trim());
-          const resp = await fetch("/send-otp", { method: "POST", body: fd });
-          const data = await resp.json();
-          if (!resp.ok || !data.success) throw new Error(data.msg || 'Send failed');
-          btnGetOtp.classList.replace('btn-outline-primary', 'btn-success');
-          btnGetOtp.innerHTML = '<i class="fas fa-check"></i> Sent';
-        } catch (e) {
-          btnGetOtp.classList.replace('btn-outline-primary', 'btn-danger');
-          btnGetOtp.innerHTML = '<i class="fas fa-times"></i> Failed';
-          setTimeout(() => {
-            btnGetOtp.classList.replace('btn-danger', 'btn-outline-primary');
-            btnGetOtp.innerHTML = original;
-            btnGetOtp.disabled = false;
-          }, 1600);
-        }
       });
 
       (async function fetchLoginNonce() {

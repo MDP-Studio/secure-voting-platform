@@ -255,98 +255,128 @@ def login():
             return render_template('login.html', prev_username=username)
           
 
-        # Check if MFA is enabled
-        if not current_app.config.get('ENABLE_MFA', False):
-            # Skip OTP, directly log in
-            # Reset failed login attempts on successful login
-            user.reset_failed_logins()
-            db.session.commit()
-            
-            # Check if password is expired
-            if user.is_password_expired():
-                flash('Your password has expired. Please change it to continue.', 'warning')
-                login_user(user)  # Login briefly to allow password change
-                return redirect(url_for('password.change_password'))
-            
-            login_user(user)
+        # --- MFA gate: if enabled, redirect to OTP verification page ---
+        if current_app.config.get('ENABLE_MFA', False):
+            # Store the authenticated user ID in session for the OTP step.
+            # The user is NOT logged in yet — they must pass OTP first.
+            session['mfa_pending_user_id'] = user.id
+            session['mfa_pending_next'] = request.args.get('next', '')
 
-            # issue JWT session token and set as secure HttpOnly cookie
-            token = issue_token(user.id)
+            # Auto-send OTP email
+            try:
+                import random, string
+                code = ''.join(random.choices(string.digits, k=6))
+                session['otp_code'] = code
+                session['otp_user'] = user.id
+                session['otp_expires_at'] = time.time() + 300
+                session['otp_attempts'] = 0
 
-            # role-based redirect
-            if user.is_manager:
-                dashboard_url = url_for('dev.dev_dashboard')  # manager dashboard
-            elif user.is_delegate:
-                dashboard_url = url_for('main.delegate_dashboard')
-            else:
-                dashboard_url = url_for('main.dashboard')
+                from flask_mail import Message
+                from app import mail
+                msg = Message(
+                    subject="SecureVote — Verification Code",
+                    recipients=[user.email],
+                    body=(
+                        f"Your one-time verification code is: {code}\n\n"
+                        f"This code expires in 5 minutes. Do not share it.\n\n"
+                        f"— SecureVote Security"
+                    ),
+                )
+                mail.send(msg)
+            except Exception as e:
+                current_app.logger.error(f"Failed to send MFA OTP: {e}")
 
-            # gentle notice if not admin-approved yet
-            #if not getattr(user, "is_approved", False):
-            #    flash_once("Your account is pending admin approval. You may not be eligible to vote yet.")
+            return redirect(url_for('auth.verify_mfa'))
 
-            resp = make_response(redirect(request.args.get('next') or dashboard_url))
-            secure = bool(int(current_app.config.get('SESSION_COOKIE_SECURE', 0)))
-            samesite = current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax')
-            resp.set_cookie('session_token', token, httponly=True, secure=secure, samesite=samesite)
-                
-            return resp
+        # --- No MFA: complete login directly ---
+        return _complete_login(user, request.args.get('next'))
 
-        # 3) OTP checks (when MFA enabled)
-        sess_code   = session.get('otp_code')
-        sess_user   = session.get('otp_user')
-        expires_at  = session.get('otp_expires_at')   # set in /send-otp
+    # GET request — render the login form
+    return render_template('login.html')
+
+
+def _complete_login(user, next_url=None):
+    """Finalize login: reset attempts, check password expiry, issue JWT."""
+    user.reset_failed_logins()
+    db.session.commit()
+
+    if user.is_password_expired():
+        flash('Your password has expired. Please change it to continue.', 'warning')
+        login_user(user)
+        return redirect(url_for('password.change_password'))
+
+    login_user(user)
+    token = issue_token(user.id)
+
+    # Role-based redirect
+    if user.is_manager:
+        dashboard_url = url_for('dev.dev_dashboard')
+    elif user.is_delegate:
+        dashboard_url = url_for('main.delegate_dashboard')
+    else:
+        dashboard_url = url_for('main.dashboard')
+
+    resp = make_response(redirect(next_url or dashboard_url))
+    secure = bool(int(current_app.config.get('SESSION_COOKIE_SECURE', 0)))
+    samesite = current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax')
+    resp.set_cookie('session_token', token, httponly=True, secure=secure, samesite=samesite)
+    return resp
+
+
+@auth.route('/verify-mfa', methods=['GET', 'POST'])
+def verify_mfa():
+    """
+    Step 2 of login: OTP verification page.
+    Only accessible after successful password authentication.
+    """
+    pending_user_id = session.get('mfa_pending_user_id')
+    if not pending_user_id:
+        flash('Please sign in first.', 'error')
+        return redirect(url_for('auth.login'))
+
+    user = db.session.get(User, pending_user_id)
+    if not user:
+        session.pop('mfa_pending_user_id', None)
+        flash('Session expired. Please sign in again.', 'error')
+        return redirect(url_for('auth.login'))
+
+    if request.method == 'POST':
+        otp_input = request.form.get('otp', '').strip()
+        sess_code = session.get('otp_code')
+        sess_user = session.get('otp_user')
+        expires_at = session.get('otp_expires_at')
 
         if not (sess_code and sess_user and expires_at):
-            flash_once('OTP not requested or expired. Please click "Get OTP" first.')
-            return render_template('login.html', prev_username=username)
+            flash('Verification code expired. Please sign in again.', 'error')
+            session.pop('mfa_pending_user_id', None)
+            return redirect(url_for('auth.login'))
 
         if sess_user != user.id or time.time() > float(expires_at):
-            # clear when expired or bound to another user
-            for k in ('otp_code', 'otp_user', 'otp_expires_at', 'otp_attempts'):
+            for k in ('otp_code', 'otp_user', 'otp_expires_at', 'otp_attempts', 'mfa_pending_user_id'):
                 session.pop(k, None)
-            flash_once('OTP expired. Please request a new OTP.')
-            return render_template('login.html', prev_username=username)
+            flash('Verification code expired. Please sign in again.', 'error')
+            return redirect(url_for('auth.login'))
 
         attempts = session.get('otp_attempts', 0)
         if attempts >= 5:
-            flash_once('Too many OTP attempts. Please request a new OTP.')
-            return render_template('login.html', prev_username=username)
+            for k in ('otp_code', 'otp_user', 'otp_expires_at', 'otp_attempts', 'mfa_pending_user_id'):
+                session.pop(k, None)
+            flash('Too many attempts. Please sign in again.', 'error')
+            return redirect(url_for('auth.login'))
 
         if not otp_input or otp_input != sess_code:
             session['otp_attempts'] = attempts + 1
-            flash_once('Invalid OTP')
-            return render_template('login.html', prev_username=username)
+            flash('Invalid verification code.', 'error')
+            return render_template('verify_mfa.html', email=user.email)
 
-        # --- Success: clear OTP session and log in ---
-        for k in ('otp_code', 'otp_user', 'otp_expires_at', 'otp_attempts'):
+        # OTP valid — clear session and complete login
+        next_url = session.get('mfa_pending_next', '')
+        for k in ('otp_code', 'otp_user', 'otp_expires_at', 'otp_attempts', 'mfa_pending_user_id', 'mfa_pending_next'):
             session.pop(k, None)
 
-        # Reset failed login attempts on successful login
-        user.reset_failed_logins()
-        db.session.commit()
-        
-        # Check if password is expired
-        if user.is_password_expired():
-            flash('Your password has expired. Please change it to continue.', 'warning')
-            login_user(user)  # Login briefly to allow password change
-            return redirect(url_for('password.change_password'))
-        
-        login_user(user)
-        token = issue_token(user.id)
-        if not getattr(user, "is_approved", False):
-            flash_once("Your account is pending admin approval. You may not be eligible to vote yet.")
+        return _complete_login(user, next_url or None)
 
-        resp = make_response(redirect(request.args.get('next') or url_for('main.dashboard')))
-        
-        # cookie settings mirror app config but allow override via env
-        secure = bool(int(current_app.config.get('SESSION_COOKIE_SECURE', 0)))
-        samesite = current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax')
-        resp.set_cookie('session_token', token, httponly=True, secure=secure, samesite=samesite)
-            
-        return resp
-
-    return render_template('login.html')
+    return render_template('verify_mfa.html', email=user.email)
 
 
 @auth.route('/login-nonce', methods=['GET'])
