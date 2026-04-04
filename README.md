@@ -134,12 +134,20 @@ docker-compose up --build
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests/test_smoke.py -v          # Unit tests
-python tests/test_waf_demo.py                    # WAF effectiveness
-python tests/test_vote_rate_limiting.py           # Rate limiting
+python -m pytest tests/ -v    # 103 tests — all pass
 ```
 
-The CI/CD pipeline runs on every push via GitHub Actions, including security-specific tests on a nightly schedule.
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| `test_smoke.py` | 14 | Core functionality: login, voting, dashboard, results, logout |
+| `test_blind_signature.py` | 8 | RSA blind signature protocol: crypto primitives + full HTTP flow |
+| `test_new_features.py` | 14 | Password reset, profile, elections, error pages, audit, anonymity |
+| `test_vote_concurrency.py` | 2 | TOCTOU race condition prevention with 10-thread stress test |
+| `test_password_validation.py` | 25 | Password strength, edge cases, model integration |
+| `test_password_policy.py` | 8 | Account lockout, password expiry, failed login tracking |
+| `test_pagination_security.py` | 2 | Pagination limit enforcement (max 40/page) |
+| `test_pii_encryption_and_access.py` | 3 | PII encryption at rest + access control |
+| `integration/test_login_robot_blocking.py` | 2 | Anti-bot nonce validation |
 
 ## Environment Variables
 
