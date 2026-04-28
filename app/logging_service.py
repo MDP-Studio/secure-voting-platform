@@ -5,8 +5,37 @@ import hashlib
 import logging
 import shutil
 import stat
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Optional, Tuple, List
+
+
+@contextmanager
+def _exclusive_file_lock(lock_file):
+    """Apply an exclusive advisory lock on Unix and Windows."""
+    if os.name == 'nt':
+        import msvcrt
+
+        lock_file.seek(0, os.SEEK_END)
+        if lock_file.tell() == 0:
+            lock_file.write('\0')
+            lock_file.flush()
+
+        lock_file.seek(0)
+        msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+        try:
+            yield
+        finally:
+            lock_file.seek(0)
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 class HmacAuditHandler(logging.Handler):
@@ -50,7 +79,6 @@ class HmacAuditHandler(logging.Handler):
         A lock file serializes writes across multiple Gunicorn workers
         so the HMAC chain remains linear and verifiable.
         """
-        import fcntl
         try:
             msg = self.format(record)
             payload = {
@@ -67,11 +95,10 @@ class HmacAuditHandler(logging.Handler):
 
             # Acquire exclusive lock to serialize across workers
             lock_path = self.path + '.lock'
-            with open(lock_path, 'a') as lock_f:
-                try:
-                    fcntl.flock(lock_f, fcntl.LOCK_EX)
-
-                    # Re-read last_hmac from state file (another worker may have updated it)
+            with open(lock_path, 'a+', encoding='utf-8') as lock_f:
+                with _exclusive_file_lock(lock_f):
+                    # Re-read last_hmac from state file because another worker
+                    # may have updated it while this process waited for the lock.
                     try:
                         if os.path.exists(self.state_path):
                             with open(self.state_path, 'r', encoding='utf-8') as sf:
@@ -99,16 +126,9 @@ class HmacAuditHandler(logging.Handler):
                     except Exception:
                         pass
 
-                finally:
-                    fcntl.flock(lock_f, fcntl.LOCK_UN)
-
             self.last_hmac = h
         except Exception:
-            # logging should not raise
-            try:
-                logging.getLogger(__name__).exception('Audit logging failed')
-            except Exception:
-                pass
+            self.handleError(record)
 
 
 def init_audit_logging(app) -> None:

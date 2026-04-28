@@ -1,182 +1,178 @@
-# SecureVote — Secure Electronic Voting Platform
+# SecureVote: Secure Electronic Voting Platform
 
-A secure online voting platform built with Flask, featuring cryptographic voter anonymity via RSA blind signatures, PII encryption at rest, multi-factor authentication, Web Application Firewall integration, and result signing via HashiCorp Vault.
+SecureVote is a Flask-based secure voting system built to demonstrate security engineering evidence: voter anonymity, encrypted PII, tamper-evident audit logs, access control, WAF enforcement, Vault-backed signing, and race-condition testing.
 
-Built as part of a Secure Software Systems course — originally a team project, completed and enhanced as a solo portfolio piece.
+This started as a Secure Software Systems team project and was later completed, hardened, documented, and tested as a solo portfolio project.
 
-## Key Security Features
+![SecureVote election management dashboard](docs/screenshots/securevote-dashboard.png)
 
-- **RSA Blind Signatures** — The server signs ballots without seeing their contents. Votes are cast anonymously via a separate endpoint with no cookies or session data (Chaum 1983, Bellare-Rogaway 1996 FDH proof)
-- **CSRF Protection** — Per-session tokens validated on all state-changing requests with constant-time comparison
-- **PII Encryption at Rest** — Voter personal data encrypted with ChaCha20-Poly1305 (AEAD)
-- **Blind Indexing** — Driver licence lookups use HMAC-SHA256 with high-entropy pepper
-- **Web Application Firewall** — OWASP ModSecurity CRS via nginx reverse proxy
-- **Cryptographic Result Signing** — Election results signed via HashiCorp Vault Transit engine (non-repudiation)
-- **HMAC-Backed Audit Logging** — Tamper-evident audit trail with chain verification
-- **Role-Based Access Control** — Voter, Delegate, Manager roles with enforced permissions
-- **Account Security** — Lockout after 5 failed attempts, 90-day password expiry, 12-char minimum with complexity requirements
-- **Two-Step MFA** — Server-enforced email OTP after password validation (separate page, not client-bypassable)
-- **Pessimistic Locking** — `SELECT ... FOR UPDATE` + `VoteReceipt(UNIQUE user_id)` prevents TOCTOU double-voting
-- **Geo-IP Filtering** — Country-level access restriction via MaxMind GeoIP2
-- **Rate Limiting** — Per-endpoint WAF limits (voting: 2 req/min, general: 500 req/min)
-- **Election State Management** — Draft/open/close lifecycle with time-based enforcement
+## Security Controls at a Glance
+
+| Security area | Implementation | Evidence in repo |
+| --- | --- | --- |
+| Anonymous voting | RSA blind signatures, browser-side unblinding, separate anonymous `/vote/cast` endpoint with no cookies or session data | `app/security/blind_signature.py`, `app/static/js/blind_vote.js`, `tests/test_blind_signature.py` |
+| PII protection | ChaCha20-Poly1305 encryption for voter PII and HMAC-SHA256 blind indexes for driver licence lookup | `app/security/encryption.py`, `app/models.py`, `tests/test_pii_encryption_and_access.py` |
+| Audit integrity | HMAC-SHA256 JSONL audit chain with previous-record linkage and manager-visible chain verification | `app/logging_service.py`, `app/routes/audit.py` |
+| Authentication hardening | Password policy, account lockout, password expiry, signed password reset tokens, email OTP MFA, anti-bot login nonce, honeypot, Origin/Referer checks | `app/auth.py`, `app/security/password_validator.py`, `tests/test_password_policy.py`, `tests/integration/test_login_robot_blocking.py` |
+| Authorization | Voter, delegate, and manager roles with route-level guards and region-limited delegate candidate management | `app/utils/auth_decorators.py`, `app/routes/candidates.py`, `app/routes/elections.py` |
+| CSRF protection | Per-session CSRF tokens on state-changing requests with targeted exemptions for public verification and anonymous ballot endpoints | `app/security/csrf.py`, form templates |
+| WAF and rate limiting | nginx fronted by OWASP ModSecurity CRS with endpoint-specific request limits, security headers, and isolated backend service exposure | `nginx/conf.d/waf.conf`, `docker-compose.yml` |
+| Result integrity | Election result signing and verification through HashiCorp Vault Transit when configured, with local RSA fallback for development | `app/security/signing_service.py`, `app/security/vault_client.py`, `docs/VAULT_SETUP.md` |
+| Double-vote prevention | `SELECT ... FOR UPDATE`, transactional `VoteReceipt`, and a unique `user_id` constraint to stop TOCTOU double voting | `app/vote_service.py`, `tests/test_vote_concurrency.py` |
+| Production safety | Environment-aware settings, split database binds, local-only developer dashboard controls, and deployment safety documentation | `app/environment.py`, `app/utils/db_utils.py`, `docs/PRODUCTION_SAFETY_REPORT.md` |
+
+## What This Proves for Security Analyst Roles
+
+- Can translate security requirements into concrete application controls, not just describe them.
+- Understands anonymity, integrity, authentication, authorization, auditability, and operational hardening tradeoffs.
+- Can write reproducible security tests for password policy, PII access, blind signatures, login automation controls, pagination limits, and race conditions.
+- Can document implementation evidence clearly enough for reviewers to verify claims from the code and tests.
+- Can reason about deployment boundaries: WAF in front, app isolated behind nginx, MySQL internal only, Vault used for signing, secrets excluded from git.
+
+## Security Architecture
+
+```text
+                    +-----------------------------+
+  User browser ---> | nginx + ModSecurity CRS WAF |  Rate limits, CRS rules, security headers
+                    +-------------+---------------+
+                                  |
+                                  v
+                    +-------------+---------------+
+                    | Flask application            |  Auth, RBAC, CSRF, MFA, blind signatures
+                    +-------------+---------------+
+                                  |
+                 +----------------+----------------+
+                 |                                 |
+                 v                                 v
+        +--------+---------+              +--------+---------+
+        | MySQL / SQLite   |              | HashiCorp Vault  |
+        | Split DB binds   |              | Transit signing  |
+        | Encrypted PII    |              | KV secret pattern |
+        +------------------+              +------------------+
+```
+
+### Blind Signature Voting Flow
+
+```text
+Phase 1: Authenticated voter requests authority
+  Browser creates ballot hash and blinds it.
+  Server signs the blinded value.
+  Server records a VoteReceipt so the voter cannot request another ballot.
+  Server never sees the unblinded ballot.
+
+Phase 2: Anonymous ballot submission
+  Browser unblinds the signature.
+  Browser sends ballot plus signature to /vote/cast.
+  The endpoint does not use cookies or session identity.
+  Server verifies the signature and records an anonymous Vote.
+```
+
+### Data and Integrity Controls
+
+- PII is encrypted using ChaCha20-Poly1305 before storage.
+- Driver licence lookup uses an HMAC-SHA256 blind index with a high-entropy pepper.
+- Audit events are appended as HMAC-signed JSON lines with `prev_hmac` chaining.
+- Election results can be signed through Vault Transit and verified through `/results/verify`.
+- Voting concurrency is tested with 10 simultaneous attempts against the same voter.
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
+| --- | --- |
 | Backend | Flask 2.3, SQLAlchemy, Flask-Login, Flask-Mail, Flask-Migrate |
-| Database | MySQL 8.0 (production) / SQLite (development) |
-| Security | ChaCha20-Poly1305, RSA blind signatures, PyJWT, itsdangerous, HashiCorp Vault |
-| Infrastructure | Docker Compose, nginx + ModSecurity, Gunicorn |
-| Testing | pytest (103 tests), GitHub Actions CI/CD |
-| Frontend | Jinja2, Bootstrap 5, Inter font, Web Speech API |
+| Database | MySQL 8.0 for Docker, SQLite for local development and tests |
+| Security | RSA blind signatures, ChaCha20-Poly1305, HMAC-SHA256, PyJWT, itsdangerous, HashiCorp Vault |
+| Infrastructure | Docker Compose, nginx, OWASP ModSecurity CRS, Gunicorn |
+| Testing | pytest, pytest-flask, GitHub Actions |
+| Frontend | Jinja2, Bootstrap 5, Inter, browser Web Speech API |
 
-## Architecture
+## How to Run Demo Locally
 
-```
-                    +-----------+
-  Users ──────────► |  nginx    |  WAF (ModSecurity CRS)
-                    |  :80      |  Rate Limiting, Security Headers
-                    +-----+-----+
-                          │
-                    +-----v-----+
-                    |  Flask    |  Authentication, RBAC, Encryption
-                    |  :8000    |  Business Logic, Blind Signatures
-                    +-----+-----+
-                          │
-              +-----------+----------+
-              │                      │
-        +-----v-----+        +------v------+
-        |  MySQL    |        |  Vault      |
-        |  :3306    |        |  :8200      |
-        |  Split    |        |  Transit    |
-        |  Binds    |        |  KV v2      |
-        +-----------+        +-------------+
-```
-
-**Split Database Connections:** Admin and voter operations route to separate MySQL users with different permission sets, enforced at the ORM session level.
-
-### Anonymous Voting Protocol (RSA Blind Signatures)
-
-```
-Phase 1 — Authenticated (server sees voter, NOT ballot):
-  Voter ──[blinded ballot]──► Server signs blind data
-                               Issues VoteReceipt (UNIQUE user_id)
-  Voter ◄──[blind signature]── Server never sees candidate choice
-
-Phase 2 — Anonymous (server sees ballot, NOT voter):
-  Voter unblinds signature (client-side BigInt math)
-  Random 5-30s delay (timing attack mitigation)
-  Voter ──[ballot + signature]──► /vote/cast (NO cookies, NO session)
-                                   Server verifies signature
-                                   Stores anonymous Vote record
-```
-
-The server signs the ballot without seeing its contents. The voter casts the ballot without revealing their identity. Even a fully compromised server cannot link votes to voters — the cryptographic blinding makes the two phases unlinkable.
-
-## Quick Start
-
-### Local Development (SQLite)
+### Option 1: Local SQLite Demo
 
 ```bash
-pip install -r requirements.txt
-python run_demo.py
-# Access: http://localhost:5000
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python scripts/run_demo.py
 ```
 
-### Docker (Full Stack)
+Open `http://127.0.0.1:5000`.
+
+On Windows PowerShell, activate the virtual environment with:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python scripts\run_demo.py
+```
+
+### Option 2: Full Docker Stack with WAF, MySQL, and Vault
 
 ```bash
-cp .env.example .env   # Fill in your secrets
+cp .env.example .env
+# Fill in strong local values in .env before starting the stack.
 docker-compose up --build -d
-# Web (WAF-protected): http://localhost
-# Vault UI: http://localhost:8200
 ```
 
-### Default Test Credentials
+Open:
+
+- App through WAF: `http://localhost`
+- Vault dev UI: `http://localhost:8200`
+
+### Demo Credentials
 
 | Role | Username | Password |
-|------|----------|----------|
-| Manager | admin | Admin@123456! |
-| Delegate | delegate1 | Delegate@123! |
-| Voter | voter1 | Password@123! |
+| --- | --- | --- |
+| Manager | `admin` | `Admin@123456!` |
+| Delegate | `delegate1` | `Delegate@123!` |
+| Voter | `voter1` | `Password@123!` |
 
-## Features
+## Testing and Verification
 
-### Voter Flow
-1. Register with driver licence and identity verification
-2. Email verification link sent automatically
-3. Admin reviews and approves account
-4. Log in → two-step MFA challenge (if enabled)
-5. Cast anonymous vote via blind signature protocol
-6. View confirmation — ballot cannot be traced to voter
-
-### Manager Flow
-- Approve/reject user registrations (email verification status visible)
-- Unlock locked accounts
-- Create and manage elections (draft → open → close lifecycle)
-- View vote tallies and sign results cryptographically
-- Review HMAC-backed audit log with chain integrity verification
-
-### Delegate Flow
-- Manage candidates within assigned region (region guards enforced)
-- View regional electoral roll data
-
-### Accessibility
-- **Text-to-Speech** — Floating TTS button (bottom-right) using the browser's Web Speech API. Click any text to hear it read aloud, or "Read Page" for full content. Keyboard shortcut: `Alt+T`
-- **Skip-to-content** link, ARIA landmarks, focus indicators
-- **Reduced motion** and **high contrast** mode support
-
-### Security Controls
-- Password reset via signed, time-limited email tokens (30-min expiry)
-- Generic responses to prevent email enumeration
-- CSRF tokens on all POST forms
-- GOTCHA honeypot fields + login nonce consumption tracking
-- Cloudflare Turnstile integration (optional)
-- Content Security Policy, X-Frame-Options, HSTS headers via nginx
-
-## Testing
+Install test dependencies and run the suite:
 
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest tests/ -v    # 103 tests, all pass
+python -m pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest
 ```
 
-| Test File | Tests | Coverage |
-|-----------|-------|----------|
-| `test_smoke.py` | 14 | Core: login, voting, dashboard, results, logout |
-| `test_blind_signature.py` | 8 | RSA blind signature protocol + full HTTP flow |
-| `test_new_features.py` | 14 | Password reset, profile, elections, errors, anonymity |
-| `test_password_validation.py` | 25 | Password strength rules + edge cases |
-| `test_password_policy.py` | 8 | Account lockout, password expiry |
-| `test_vote_concurrency.py` | 2 | 10-thread TOCTOU stress test |
-| `test_pii_encryption_and_access.py` | 3 | PII encryption at rest + access control |
-| `test_pagination_security.py` | 2 | Pagination limit enforcement |
-| `integration/test_login_robot_blocking.py` | 2 | Anti-bot nonce validation |
+Current collection: 104 pytest tests.
 
-## Environment Variables
+| Test area | File | Count |
+| --- | --- | ---: |
+| Blind signature protocol and HTTP flow | `tests/test_blind_signature.py` | 8 |
+| Password reset, election access, anonymity, audit page | `tests/test_new_features.py` | 14 |
+| Pagination limit enforcement | `tests/test_pagination_security.py` | 2 |
+| Account lockout, expiry, and password change | `tests/test_password_policy.py` | 19 |
+| Password validation and registration integration | `tests/test_password_validation.py` | 26 |
+| PII encryption and access control | `tests/test_pii_encryption_and_access.py` | 3 |
+| Core smoke tests, role access, voting, results | `tests/test_smoke.py` | 15 |
+| Concurrent vote race-condition checks | `tests/test_vote_concurrency.py` | 2 |
+| Login nonce, CLI blocking, honeypot, Origin/Referer checks | `tests/integration/test_login_robot_blocking.py` | 15 |
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SECRET_KEY` | Flask session secret | `dev-secret` |
-| `DATABASE_URL` | Database connection string | SQLite (local) |
-| `VOTER_PII_KEY_BASE64` | 32-byte Base64 encryption key | Auto-generated |
-| `LICENSE_HASH_PEPPER` | High-entropy pepper for blind indexing | — |
-| `ENABLE_MFA` | Enable email-based OTP | `False` |
-| `GEO_FILTER_ENABLED` | Enable IP geo-filtering | `True` |
-| `VAULT_ADDR` / `VAULT_TOKEN` | HashiCorp Vault connection | — |
-| `MAIL_USERNAME` / `MAIL_PASSWORD` | SMTP credentials for emails | — |
-| `AUDIT_HMAC_KEY` | HMAC key for audit log chain integrity | — |
+## Repo Hygiene
 
-See `.env.example` for the full list with generation instructions.
+The repository is configured to exclude local secrets and generated runtime files:
+
+- `.env` and local `.env.*` files
+- SQLite and local database files
+- `instance/`, logs, and audit logs
+- Python caches, pytest cache, coverage output, and virtual environments
+- Local package-manager lock files generated during experiments
 
 ## Documentation
 
-- [Password Policy](docs/PASSWORD_POLICY.md) — Account lockout, expiration, strength rules
-- [Vault Setup](docs/VAULT_SETUP.md) — Transit engine and KV integration
-- [Environment Detection](docs/ENVIRONMENT_DETECTION.md) — Production safety system
-- [CI/CD Guide](.github/CI_CD_GUIDE.md) — Workflow documentation
+- [Password Policy](docs/PASSWORD_POLICY.md)
+- [Vault Setup](docs/VAULT_SETUP.md)
+- [Environment Detection](docs/ENVIRONMENT_DETECTION.md)
+- [Production Safety Report](docs/PRODUCTION_SAFETY_REPORT.md)
+- [CI/CD Guide](.github/CI_CD_GUIDE.md)
+- [Testing Guide](tests/README.md)
+
+## Note on Public Demo
+
+This project is intended to be reviewed as code, tests, and local demo evidence. A public hosted demo is intentionally not required for a voting-system portfolio project.
 
 ## License
 
