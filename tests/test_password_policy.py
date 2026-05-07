@@ -21,7 +21,7 @@ def app():
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
         'WTF_CSRF_ENABLED': False,
-        'SECRET_KEY': 'test-secret-key',
+        'SECRET_KEY': 'test-secret-key-32-bytes-minimum-for-hs256',
         'ENABLE_MFA': False,  # Disable MFA for simpler testing
     })
     

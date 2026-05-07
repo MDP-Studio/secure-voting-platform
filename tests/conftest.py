@@ -24,7 +24,7 @@ def app():
     app = create_app({
         'TESTING': True,
         'SQLALCHEMY_DATABASE_URI': f'sqlite:///{db_path}',
-        'SECRET_KEY': 'test-secret-key',
+        'SECRET_KEY': 'test-secret-key-32-bytes-minimum-for-hs256',
         'WTF_CSRF_ENABLED': False,  # Disable CSRF for testing
         'ENABLE_MFA': False,  # Disable MFA for testing
     })

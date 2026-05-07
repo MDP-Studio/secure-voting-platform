@@ -4,6 +4,14 @@ SecureVote is a Flask-based secure voting system built to demonstrate security e
 
 This started as a Secure Software Systems team project and was later completed, hardened, documented, and tested as a solo portfolio project.
 
+## About this project
+
+SecureVote is a security-engineering portfolio project for showing how a voting application can separate identity, ballot authority, ballot submission, auditability, and operational hardening. The project is designed to be reviewed through code, tests, documentation, and a local demo rather than as a public hosted election system.
+
+The main point is not that online voting is easy. It is that sensitive workflows need layered controls that are testable: blind signatures for ballot anonymity, encrypted PII, role-based access control, tamper-evident audit logs, CSRF protection, WAF rules, Vault-backed signing, and race-condition tests for double-vote prevention.
+
+I keep the public claim intentionally narrow: this is a reproducible security prototype and evidence package, not a production election service.
+
 ![SecureVote election management dashboard](docs/screenshots/securevote-dashboard.png)
 
 ## Security Controls at a Glance

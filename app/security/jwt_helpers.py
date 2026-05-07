@@ -2,7 +2,7 @@ import os
 import time
 from typing import Optional
 import jwt
-from flask import current_app
+from flask import current_app, has_app_context
 from .vault_client import vault_client
 
 # Small wrapper around PyJWT for issuing and verifying access tokens
@@ -15,7 +15,11 @@ def _get_secret() -> str:
         val = vault_client.kv_get(path, key)
         if val:
             return val
-    return os.environ.get('SECRET_KEY', 'dev-secret')
+    if has_app_context():
+        configured_secret = current_app.config.get('SECRET_KEY')
+        if configured_secret:
+            return configured_secret
+    return os.environ.get('SECRET_KEY', 'dev-secret-change-me-minimum-32-bytes')
 ALGORITHM = 'HS256'
 # token lifetime in seconds (15 minutes)
 TOKEN_LIFETIME = int(os.environ.get('JWT_LIFETIME_SECONDS', 15 * 60))
