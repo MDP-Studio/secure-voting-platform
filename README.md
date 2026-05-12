@@ -87,7 +87,7 @@ Phase 2: Anonymous ballot submission
 
 | Layer | Technology |
 | --- | --- |
-| Backend | Flask 2.3, SQLAlchemy, Flask-Login, Flask-Mail, Flask-Migrate |
+| Backend | Flask 3.1, SQLAlchemy, Flask-Login, Flask-Mail, Flask-Migrate |
 | Database | MySQL 8.0 for Docker, SQLite for local development and tests |
 | Security | RSA blind signatures, ChaCha20-Poly1305, HMAC-SHA256, PyJWT, itsdangerous, HashiCorp Vault |
 | Infrastructure | Docker Compose, nginx, OWASP ModSecurity CRS, Gunicorn |
