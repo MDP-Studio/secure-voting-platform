@@ -1,3 +1,4 @@
+import logging
 # init_db.py
 import os
 from datetime import datetime, date, timezone
@@ -90,6 +91,7 @@ def _safe_add_columns(engine):
                 print(f"  + Added column {table}.{col}")
             except Exception:
                 # Column already exists — expected on subsequent runs
+                logging.getLogger(__name__).debug("Handled exception in app/init_db.py", exc_info=True)
                 conn.rollback()
 
 

@@ -2,6 +2,7 @@
 Election management routes — create, open, close elections.
 Manager-only access.
 """
+import logging
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
@@ -43,11 +44,13 @@ def create_election():
         try:
             election.open_at = datetime.fromisoformat(open_at)
         except ValueError:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/elections.py", exc_info=True)
             pass
     if close_at:
         try:
             election.close_at = datetime.fromisoformat(close_at)
         except ValueError:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/elections.py", exc_info=True)
             pass
 
     db.session.add(election)

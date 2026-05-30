@@ -35,6 +35,7 @@ class RoutingSession(Session):
                 return db.get_engine(current_app, bind=bind_name)
             except Exception:
                 # If the bind is misconfigured, fall back to default
+                logging.getLogger(__name__).debug("Handled exception in app/__init__.py", exc_info=True)
                 pass
         return super().get_bind(mapper=mapper, clause=clause, **kwargs)
 
@@ -58,6 +59,7 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
     except Exception:
+        logging.getLogger(__name__).debug("Handled exception in app/__init__.py", exc_info=True)
         pass
 
 def create_app(test_config=None):
@@ -161,6 +163,7 @@ def create_app(test_config=None):
     try:
         os.makedirs(app.instance_path, exist_ok=True)
     except OSError:
+        logging.getLogger(__name__).debug("Handled exception in app/__init__.py", exc_info=True)
         pass
 
     # Configure logging (avoid adding duplicate handlers if the app is
@@ -290,6 +293,7 @@ def create_app(test_config=None):
             g._active_bind = 'voters'
         except Exception:
             # On any error, do not block the request; fall back to default
+            logging.getLogger(__name__).debug("Handled exception in app/__init__.py", exc_info=True)
             g._active_bind = None
 
     # create database tables if they don't exist (Flask-SQLAlchemy will
@@ -305,7 +309,7 @@ def create_app(test_config=None):
         # In testing, disable Vote.__bind_key__ so Vote shares the default metadata
         if app.config.get('TESTING'):
             os.environ['DISABLE_VOTE_BIND'] = '1'
-        from app import models  # noqa: F401
+        from app import models  # noqa: F401  # agent-quality: allow: import registers model metadata for tests
         # In testing, collapse all per-bind tables into the default metadata
         # so foreign keys resolve within a single SQLite database. Let tests
         # call db.create_all() themselves (tests/conftest.py already does this)
@@ -332,6 +336,7 @@ def create_app(test_config=None):
                     db.metadatas.clear()
                     db.metadatas[None] = db.metadata
                 except Exception:
+                    logging.getLogger(__name__).debug("Handled exception in app/__init__.py", exc_info=True)
                     pass
 
                 # 4) Monkey-patch create_all to operate only on the default
@@ -340,6 +345,7 @@ def create_app(test_config=None):
                     getattr(self.metadata, op_name)(bind=self.engine)
                 db._call_for_binds = types.MethodType(_testing_call_for_binds, db)
             except Exception:
+                logging.getLogger(__name__).debug("Handled exception in app/__init__.py", exc_info=True)
                 pass
         else:
             # Avoid implicit schema creation unless explicitly requested.
@@ -372,6 +378,7 @@ def create_app(test_config=None):
         try:
             user = db.session.get(User, int(user_id))
         except Exception:
+            logging.getLogger(__name__).debug("Handled exception in app/__init__.py", exc_info=True)
             return None
 
         if user:

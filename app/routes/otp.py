@@ -1,3 +1,4 @@
+import logging
 from flask import Blueprint, request, jsonify, session, current_app
 from flask_mail import Message
 from app import mail
@@ -58,6 +59,7 @@ def send_otp():
             name, dom = e.split("@", 1)
             return (name[:2] + "****@" + dom) if len(name) >= 2 else ("*@" + dom)
         except Exception:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/otp.py", exc_info=True)
             return "***"
 
     return jsonify({"success": True, "msg": f"OTP sent to {mask(user.email)}"})

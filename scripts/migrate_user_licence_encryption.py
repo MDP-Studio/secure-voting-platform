@@ -11,6 +11,7 @@ User.driver_lic_hash (deterministic SHA-256) for uniqueness and lookups.
 Run with the app environment configured (DATABASE_URL, VOTER_PII_KEY_BASE64, etc.).
 """
 from __future__ import annotations
+import logging
 import os
 import sys
 from pathlib import Path
@@ -36,6 +37,7 @@ def index_exists(engine, table: str, index_name: str) -> bool:
     try:
         idx = insp.get_indexes(table)
     except Exception:
+        logging.getLogger(__name__).debug("Handled exception in scripts/migrate_user_licence_encryption.py", exc_info=True)
         return False
     return any(i.get('name') == index_name for i in idx)
 

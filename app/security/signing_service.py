@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from flask import current_app
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -67,6 +68,7 @@ def verify_signature(data: bytes, signature: bytes) -> bool:
         try:
             return vault_client.transit_verify(key_name, data, signature)
         except Exception:
+            logging.getLogger(__name__).debug("Handled exception in app/security/signing_service.py", exc_info=True)
             pass
     if _public_key is None:
         load_keys()  # Attempt to load the keys on first use.
@@ -86,4 +88,5 @@ def verify_signature(data: bytes, signature: bytes) -> bool:
         )
         return True
     except InvalidSignature:
+        logging.getLogger(__name__).debug("Handled exception in app/security/signing_service.py", exc_info=True)
         return False

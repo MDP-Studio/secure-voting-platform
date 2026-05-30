@@ -1,3 +1,4 @@
+import logging
 from flask import Blueprint, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from app import db
@@ -22,6 +23,7 @@ def create_candidate():
     try:
         region_id = int(region_id_raw)
     except ValueError:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/candidates.py", exc_info=True)
         flash("Invalid region.")
         return redirect(url_for("main.delegate_dashboard"))
 
@@ -59,6 +61,7 @@ def update_candidate(candidate_id):
         try:
             c.region_id = int(region_id_str)
         except ValueError:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/candidates.py", exc_info=True)
             pass
 
     db.session.commit()

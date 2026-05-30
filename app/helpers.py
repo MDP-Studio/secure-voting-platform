@@ -1,3 +1,4 @@
+import logging
 from flask import flash, session
 
 
@@ -8,6 +9,7 @@ def flash_once(message: str, category: str = 'message') -> None:
     try:
         existing = session.get('_flashes') or []
     except Exception:
+        logging.getLogger(__name__).debug("Handled exception in app/helpers.py", exc_info=True)
         existing = []
 
     if (category, message) in existing:

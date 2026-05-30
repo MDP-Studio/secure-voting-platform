@@ -1,3 +1,4 @@
+import logging
 # app/models.py
 from datetime import datetime, timezone
 import hashlib
@@ -186,6 +187,7 @@ def _get_hash_pepper() -> bytes:
         try:
             pepper = current_app.config.get("SECRET_KEY", "fallback-dev-pepper")
         except RuntimeError:
+            logging.getLogger(__name__).debug("Handled exception in app/models.py", exc_info=True)
             pepper = "fallback-dev-pepper"
     return pepper.encode("utf-8")
 

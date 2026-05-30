@@ -26,6 +26,7 @@ technically a no-op.  This test still validates the application-layer logic
 under concurrent load.  For production-grade validation on MySQL/PostgreSQL,
 run against the Docker stack with a load testing tool (e.g., locust).
 """
+import logging
 
 import pytest
 import threading
@@ -69,6 +70,7 @@ class TestVoteConcurrency:
                     with lock:
                         successes.append(True)
                 except (AlreadyVotedError, Exception) as e:
+                    logging.getLogger(__name__).debug("Handled exception in tests/test_vote_concurrency.py", exc_info=True)
                     with lock:
                         failures.append(str(e))
 
@@ -153,6 +155,7 @@ class TestVoteConcurrency:
                     cast_anonymous_vote(db, user, cand)
                     results[label] = True
                 except Exception:
+                    logging.getLogger(__name__).debug("Handled exception in tests/test_vote_concurrency.py", exc_info=True)
                     results[label] = False
 
         with ThreadPoolExecutor(max_workers=2) as pool:

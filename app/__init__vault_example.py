@@ -61,6 +61,7 @@ def create_app(test_config=None):
     try:
         os.makedirs(app.instance_path, exist_ok=True)
     except OSError:
+        logging.getLogger(__name__).debug("Handled exception in app/__init__vault_example.py", exc_info=True)
         pass
 
     # Configure logging
@@ -121,6 +122,7 @@ def create_app(test_config=None):
             db_healthy = True
             db_message = "Database connected"
         except Exception as e:
+            logging.getLogger(__name__).debug("Handled exception in app/__init__vault_example.py", exc_info=True)
             db_healthy = False
             db_message = f"Database error: {str(e)}"
         

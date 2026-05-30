@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from typing import Optional
@@ -42,4 +43,5 @@ def decode_token(token: str) -> Optional[dict]:
         payload = jwt.decode(token, secret, algorithms=[ALGORITHM])
         return payload
     except Exception:
+        logging.getLogger(__name__).debug("Handled exception in app/security/jwt_helpers.py", exc_info=True)
         return None

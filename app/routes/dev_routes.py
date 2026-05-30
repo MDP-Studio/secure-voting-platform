@@ -2,6 +2,7 @@
 Developer routes for debugging and monitoring.
 This file contains development-only routes that should NEVER be enabled in production.
 """
+import logging
 
 from datetime import timezone
 from flask import Blueprint, render_template, request, jsonify, g
@@ -110,6 +111,7 @@ def dev_dashboard():
                 content = f.readlines()
                 return ''.join(content[-lines:])
         except Exception as e:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/dev_routes.py", exc_info=True)
             return f"Error reading file: {e}"
 
     # Web server logs (Flask logs) - DEPRECATED: Now loaded via AJAX
@@ -149,6 +151,7 @@ def dev_dashboard():
             unique_uris.add(voters_uri)
         split_enabled = len(unique_uris) > 1
     except Exception:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/dev_routes.py", exc_info=True)
         split_enabled = False
 
     db_info = {
@@ -214,6 +217,7 @@ def get_logs():
                 content = f.readlines()
                 return ''.join(content[-lines:])
         except Exception as e:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/dev_routes.py", exc_info=True)
             return f"Error reading file: {e}"
 
     # Web server logs (Flask logs)
@@ -234,10 +238,13 @@ def get_logs():
             else:
                 return f"Error getting logs from {container_name}: {result.stderr}"
         except subprocess.TimeoutExpired:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/dev_routes.py", exc_info=True)
             return f"Timeout getting logs from {container_name}"
         except FileNotFoundError:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/dev_routes.py", exc_info=True)
             return f"docker-compose command not found. Make sure Docker is running."
         except Exception as e:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/dev_routes.py", exc_info=True)
             return f"Error getting logs from {container_name}: {e}"
 
     nginx_access_log = get_docker_logs('waf')

@@ -45,8 +45,8 @@ def client(app):
     return app.test_client()
 
 
-@pytest.fixture
-def test_user(app):
+@pytest.fixture(name='test_user')
+def user_fixture(app):
     """Create a test user."""
     with app.app_context():
         voter_role = Role.query.filter_by(name='voter').first()

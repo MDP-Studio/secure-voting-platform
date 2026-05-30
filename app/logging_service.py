@@ -69,6 +69,7 @@ class HmacAuditHandler(logging.Handler):
                 with open(self.state_path, 'r', encoding='utf-8') as f:
                     self.last_hmac = f.read().strip() or None
         except Exception:
+            logging.getLogger(__name__).debug("Handled exception in app/logging_service.py", exc_info=True)
             self.last_hmac = None
 
         # Open file handle lazily (append per write to avoid long-held handles)
@@ -104,6 +105,7 @@ class HmacAuditHandler(logging.Handler):
                             with open(self.state_path, 'r', encoding='utf-8') as sf:
                                 self.last_hmac = sf.read().strip() or None
                     except Exception:
+                        logging.getLogger(__name__).debug("Handled exception in app/logging_service.py", exc_info=True)
                         pass
 
                     payload['prev_hmac'] = self.last_hmac
@@ -124,10 +126,12 @@ class HmacAuditHandler(logging.Handler):
                         with open(self.state_path, 'w', encoding='utf-8') as sf:
                             sf.write(h)
                     except Exception:
+                        logging.getLogger(__name__).debug("Handled exception in app/logging_service.py", exc_info=True)
                         pass
 
             self.last_hmac = h
         except Exception:
+            logging.getLogger(__name__).debug("Handled exception in app/logging_service.py", exc_info=True)
             self.handleError(record)
 
 
@@ -183,10 +187,12 @@ def seal_log(file_path: str) -> Optional[str]:
             else:
                 os.chmod(sealed, 0o444)
         except Exception:
+            logging.getLogger(__name__).debug("Handled exception in app/logging_service.py", exc_info=True)
             pass
 
         return sealed
     except Exception:
+        logging.getLogger(__name__).debug("Handled exception in app/logging_service.py", exc_info=True)
         return None
 
 
@@ -206,6 +212,7 @@ def verify_audit(file_path: str, key: bytes) -> Tuple[bool, List[str]]:
                 try:
                     obj = json.loads(raw)
                 except Exception:
+                    logging.getLogger(__name__).debug("Handled exception in app/logging_service.py", exc_info=True)
                     errors.append(f'line {i}: invalid json')
                     continue
                 prev = obj.get('prev_hmac')
@@ -221,6 +228,7 @@ def verify_audit(file_path: str, key: bytes) -> Tuple[bool, List[str]]:
                     errors.append(f'line {i}: hmac mismatch')
                 last_hmac = h
     except Exception as e:
+        logging.getLogger(__name__).debug("Handled exception in app/logging_service.py", exc_info=True)
         errors.append(f'file error: {e}')
 
     return (len(errors) == 0, errors)

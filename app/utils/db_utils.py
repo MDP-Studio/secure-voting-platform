@@ -1,3 +1,4 @@
+import logging
 # db_utils.py
 import os
 import time
@@ -19,6 +20,7 @@ def wait_for_db(max_attempts=30, delay=2):
                     result = conn.execute(text("SELECT DATABASE()")).fetchone()
                     db_name = result[0] if result else "unknown"
                 except:
+                    logging.getLogger(__name__).debug("Handled exception in app/utils/db_utils.py", exc_info=True)
                     db_name = "SQLite" if db_url.startswith("sqlite") else "unknown"
                 print(f"✅ Database '{db_name}' is ready!")
             break

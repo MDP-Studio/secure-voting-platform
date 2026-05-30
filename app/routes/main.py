@@ -1,3 +1,4 @@
+import logging
 from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, session, jsonify, current_app
 from flask_login import login_required, current_user
 from sqlalchemy.exc import IntegrityError
@@ -131,12 +132,13 @@ def vote():
     # only verified voters on the roll can vote
     if not user_is_eligible_to_vote(current_user):
         flash_once('You are not eligible to vote.')
-        return redirect(url_for("main.dashboard")) # TODO: if the user can't vote they might not use the main dashboard for their login?
+        return redirect(url_for("main.dashboard"))  # Keep voters on the dashboard after eligibility denial.
 
     candidate_id_raw = request.form.get("candidate_id")
     try:
         candidate_id = int(candidate_id_raw)
     except (TypeError, ValueError):
+        logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
         flash_once('Invalid candidate selected.')
         return redirect(url_for("main.dashboard"))
 
@@ -154,9 +156,11 @@ def vote():
     try:
         cast_anonymous_vote(db, current_user, candidate)
     except AlreadyVotedError:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
         flash_once('You have already voted.')
         return redirect(url_for('main.dashboard'))
     except IntegrityError:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
         db.session.rollback()
         flash_once('You have already voted.')
         return redirect(url_for('main.dashboard'))
@@ -223,6 +227,7 @@ def request_blind_token():
         blinded_int = int(data['blinded_ballot'], 16)
         nonce_hash = data['nonce_hash']
     except (ValueError, TypeError):
+        logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
         return jsonify({"error": "Invalid blinded_ballot format"}), 400
 
     # Issue receipt + token
@@ -238,6 +243,7 @@ def request_blind_token():
     try:
         db.session.flush()
     except IntegrityError:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
         db.session.rollback()
         return jsonify({"error": "Already voted"}), 409
 
@@ -273,6 +279,7 @@ def cast_anonymous_ballot():
         ballot_json = _json.loads(ballot_bytes.decode('utf-8'))
         sig_int = int(data['signature'], 16)
     except (ValueError, TypeError, _json.JSONDecodeError):
+        logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
         return jsonify({"error": "Invalid ballot or signature format"}), 400
 
     # Verify blind signature
@@ -320,6 +327,7 @@ def cast_anonymous_ballot():
     try:
         db.session.commit()
     except IntegrityError:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
         db.session.rollback()
         return jsonify({"error": "Vote could not be recorded"}), 500
 

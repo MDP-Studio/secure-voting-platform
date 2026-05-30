@@ -1,3 +1,4 @@
+import logging
 from flask import current_app
 from sqlalchemy import text
 from app import db
@@ -21,6 +22,7 @@ def get_vote_tallies():
                     "ORDER BY votes DESC, name ASC"
                 ))
             except Exception:
+                logging.getLogger(__name__).debug("Handled exception in app/services/results_service.py", exc_info=True)
                 res = conn.execute(text(
                     "SELECT c.name AS name, COUNT(v.id) AS votes "
                     "FROM candidate c "

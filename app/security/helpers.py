@@ -1,6 +1,7 @@
 """
 Security helper functions for IP validation and client IP detection.
 """
+import logging
 
 import ipaddress
 import os
@@ -74,6 +75,7 @@ def is_ip_allowed(client_ip, allowed_list):
                     return True
             except (ipaddress.AddressValueError, ValueError):
                 # Invalid subnet format, skip
+                logging.getLogger(__name__).debug("Handled exception in app/security/helpers.py", exc_info=True)
                 continue
         elif allowed == client_ip:
             # Exact IP match

@@ -2,6 +2,7 @@
 Audit log viewer for managers.
 Reads HMAC-backed JSON-lines audit log and displays in a paginated table.
 """
+import logging
 
 import json
 import os
@@ -26,8 +27,10 @@ def _read_audit_entries(path, max_entries=500):
                 try:
                     entries.append(json.loads(line))
                 except json.JSONDecodeError:
+                    logging.getLogger(__name__).debug("Handled exception in app/routes/audit.py", exc_info=True)
                     continue
     except Exception:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/audit.py", exc_info=True)
         pass
     # Return newest first, capped
     return list(reversed(entries[-max_entries:]))

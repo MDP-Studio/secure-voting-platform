@@ -1,3 +1,4 @@
+import logging
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from base64 import b64encode, b64decode
 import os
@@ -109,6 +110,7 @@ class ChaChaEncryptionService:
                 combined = b64decode(s, validate=True)
             except Exception:
                 # Not valid base64 — treat as plaintext
+                logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
                 return s
 
             # Validate combined data length (must include 12-byte nonce and at least 16-byte tag)
@@ -135,13 +137,16 @@ class ChaChaEncryptionService:
                 return plaintext.decode('utf-8')
             except Exception as e:
                 # If decryption fails, fall back to returning the original string (likely plaintext)
+                logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
                 return s
                 
         except Exception as e:
             # Be quiet on decryption path to avoid log spam; return original
+            logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
             try:
                 return encrypted_data if encrypted_data is not None else None
             except Exception:
+                logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
                 return None
 
 class EncryptedType(TypeDecorator):
@@ -214,6 +219,7 @@ class EncryptedType(TypeDecorator):
                 try:
                     self.service = ChaChaEncryptionService.get_instance()
                 except Exception:
+                    logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
                     key_b64 = os.environ.get('VOTER_PII_KEY_BASE64')
                     if key_b64:
                         ChaChaEncryptionService.initialize(key_b64)
@@ -235,4 +241,5 @@ class EncryptedType(TypeDecorator):
             
         except Exception as e:
             # Return original value on any unexpected error to keep app functional
+            logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
             return value

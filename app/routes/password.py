@@ -1,6 +1,7 @@
 """
 Password management routes for changing and resetting passwords.
 """
+import logging
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
@@ -53,10 +54,12 @@ def change_password():
             flash('Password changed successfully!', 'success')
             return redirect(url_for('main.dashboard'))
         except PasswordValidationError as e:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/password.py", exc_info=True)
             flash(f'Password validation failed: {str(e)}', 'error')
             db.session.rollback()
             return render_template('change_password.html')
         except Exception as e:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/password.py", exc_info=True)
             flash(f'An error occurred: {str(e)}', 'error')
             db.session.rollback()
             return render_template('change_password.html')

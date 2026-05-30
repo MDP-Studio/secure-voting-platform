@@ -1,3 +1,4 @@
+import logging
 from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
 from flask_login import current_user
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -93,10 +94,12 @@ def register():
             flash("Registration successful! Please check your email to verify your account, then wait for admin approval.", 'success')
             return redirect(url_for('auth.login'))
         except PasswordValidationError as e:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/registration.py", exc_info=True)
             flash(f'Password validation failed: {str(e)}', 'error')
             db.session.rollback()
             return redirect(url_for('registration.register'))
         except Exception as e:
+            logging.getLogger(__name__).debug("Handled exception in app/routes/registration.py", exc_info=True)
             flash(f'Registration failed: {str(e)}', 'error')
             db.session.rollback()
             return redirect(url_for('registration.register'))
@@ -112,9 +115,11 @@ def verify_email(token):
     try:
         email = s.loads(token, max_age=VERIFY_TOKEN_MAX_AGE)
     except SignatureExpired:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/registration.py", exc_info=True)
         flash('Verification link has expired. Please register again.', 'error')
         return redirect(url_for('auth.login'))
     except BadSignature:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/registration.py", exc_info=True)
         flash('Invalid verification link.', 'error')
         return redirect(url_for('auth.login'))
 

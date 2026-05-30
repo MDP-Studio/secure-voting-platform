@@ -342,6 +342,7 @@ class VaultSecretsInitializer:
             )
             return True
         except Exception:
+            logging.getLogger(__name__).debug("Handled exception in scripts/init_vault_secrets.py", exc_info=True)
             return False
     
     def _generate_secret_key(self) -> str:

@@ -1,4 +1,5 @@
 from __future__ import with_statement
+import logging
 import sys
 import os
 from logging.config import fileConfig
@@ -47,6 +48,7 @@ def run_migrations_online():
                 binds[bind_key] = db.get_engine(app, bind=bind_key)
             except Exception:
                 # If a bind is not reachable (e.g., not configured in dev), skip it
+                logging.getLogger(__name__).debug("Handled exception in migrations/env.py", exc_info=True)
                 continue
 
         # Run migrations per bind with separate version tables

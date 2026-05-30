@@ -1,6 +1,7 @@
 """
 Health check routes for monitoring and load balancer checks.
 """
+import logging
 
 from flask import Blueprint, jsonify, current_app
 from app import db
@@ -27,6 +28,7 @@ def readiness():
             testing=testing_mode
         )
     except Exception as e:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/health.py", exc_info=True)
         return jsonify(status="not ready", database="disconnected", error=str(e)), 503
 
 @health.route('/live')

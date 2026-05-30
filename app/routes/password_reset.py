@@ -2,6 +2,7 @@
 Password reset flow: forgot-password and reset-password routes.
 Uses itsdangerous tokens sent via email for secure, time-limited resets.
 """
+import logging
 
 from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -72,9 +73,11 @@ def reset_password(token):
     try:
         email = s.loads(token, max_age=TOKEN_MAX_AGE)
     except SignatureExpired:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/password_reset.py", exc_info=True)
         flash('This reset link has expired. Please request a new one.', 'error')
         return redirect(url_for('password_reset.forgot_password'))
     except BadSignature:
+        logging.getLogger(__name__).debug("Handled exception in app/routes/password_reset.py", exc_info=True)
         flash('Invalid reset link.', 'error')
         return redirect(url_for('password_reset.forgot_password'))
 

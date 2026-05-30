@@ -42,4 +42,5 @@ def check_geo_ip():
         g.geo_state = geoip_service.get_state_code(user_ip)
     except Exception:
         # Never break request if geo lookup fails
+        logging.getLogger(__name__).debug("Handled exception in app/middleware.py", exc_info=True)
         g.geo_state = None

@@ -1,3 +1,4 @@
+import logging
 import pytest
 import os
 import tempfile
@@ -44,6 +45,7 @@ def app():
             os.unlink(db_path)
             break
         except OSError:
+            logging.getLogger(__name__).debug("Handled exception in tests/conftest.py", exc_info=True)
             time.sleep(0.1)  # Wait a bit and try again
 
 

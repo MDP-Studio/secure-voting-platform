@@ -80,6 +80,7 @@ class GeoIPService:
                 return fullname_map.get(name_or_code)
         except geoip2.errors.AddressNotFoundError:
             # Private/local IPs
+            logging.getLogger(__name__).debug("Handled exception in app/geo_service.py", exc_info=True)
             return None
         except Exception as e:
             logging.debug(f"GeoIP subdivision lookup failed for {ip_address}: {e}")

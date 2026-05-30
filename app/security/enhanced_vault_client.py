@@ -224,6 +224,7 @@ class EnhancedVaultClient(VaultClient):
             
             return True, "Vault health check passed"
         except Exception as e:
+            logging.getLogger(__name__).debug("Handled exception in app/security/enhanced_vault_client.py", exc_info=True)
             return False, f"Vault health check failed: {e}"
     
     def rotate_secret(self, path: str, key: str) -> bool:

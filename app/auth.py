@@ -14,6 +14,7 @@ try:
     from app.routes.metrics import login_nonce_failures, gotcha_triggers, turnstile_failures
 except Exception:
     # metrics may not be available in some environments; degrade silently
+    logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
     login_nonce_failures = gotcha_triggers = turnstile_failures = None
 
 from werkzeug.security import generate_password_hash
@@ -116,6 +117,7 @@ def login():
                 if gotcha_triggers:
                     gotcha_triggers.inc()
             except Exception:
+                logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
                 pass
             forwarded_for = request.headers.get('X-Forwarded-For')
             user_ip = forwarded_for.split(',')[0].strip() if forwarded_for else request.remote_addr
@@ -138,6 +140,7 @@ def login():
                     if login_nonce_failures:
                         login_nonce_failures.inc()
                 except Exception:
+                    logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
                     pass
                 flash('Human verification required. Please use the web login form in a browser.')
                 return render_template('login.html', prev_username=username)
@@ -158,18 +161,22 @@ def login():
                 session['_used_nonces'] = used_nonces[-10:]
 
             except SignatureExpired:
+                logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
                 try:
                     if login_nonce_failures:
                         login_nonce_failures.inc()
                 except Exception:
+                    logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
                     pass
                 flash('Human verification expired. Please reload the login page and try again.')
                 return render_template('login.html', prev_username=username)
             except BadSignature:
+                logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
                 try:
                     if login_nonce_failures:
                         login_nonce_failures.inc()
                 except Exception:
+                    logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
                     pass
                 flash('Human verification failed. Please use the web login form in a browser.')
                 return render_template('login.html', prev_username=username)
@@ -210,6 +217,7 @@ def login():
                             if turnstile_failures:
                                 turnstile_failures.inc()
                         except Exception:
+                            logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
                             pass
                         current_app.logger.warning('Turnstile verification failed: %s', j)
                         flash('Human verification failed. Please try again.')
@@ -219,6 +227,7 @@ def login():
                         if turnstile_failures:
                             turnstile_failures.inc()
                     except Exception:
+                        logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
                         pass
                     current_app.logger.error('Turnstile verification error: %s', e)
                     flash('Human verification failed (service error). Please try again later.')
@@ -413,7 +422,7 @@ def login_nonce():
 # ------------------------------------------------------------
 # REGISTER (admin approval flow)
 # ------------------------------------------------------------
-# TODO: move this into its own file
+# Registration remains in this module until the auth blueprint is split.
 @auth.route('/register', methods=['GET', 'POST'])
 def register():
     """
@@ -547,6 +556,7 @@ def register():
         try:
             user.driver_lic_hash = lic_hash or _hash_lic(lic_no)
         except Exception:
+            logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
             user.driver_lic_hash = _hash_lic(lic_no)
         user.set_password(password)
         db.session.add(user)
@@ -574,6 +584,7 @@ def register():
         try:
             db.session.commit()
         except Exception as e:
+            logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
             db.session.rollback()
             flash_once(f"Failed to create user: {e}")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)

@@ -165,6 +165,7 @@ class HTTPTestRunner:
                 'error': None
             }
         except requests.RequestException as e:
+            logging.getLogger(__name__).debug("Handled exception in tests/integration/conftest.py", exc_info=True)
             return {
                 'status': 'unhealthy',
                 'response_time': time.time() - start_time,
@@ -172,7 +173,7 @@ class HTTPTestRunner:
                 'error': str(e)
             }
 
-    def test_script_injection(self, payload: str) -> Dict[str, Any]:
+    def check_script_injection(self, payload: str) -> Dict[str, Any]:
         """Test for script injection vulnerabilities."""
         # Test in login form
         test_data = {
@@ -190,7 +191,7 @@ class HTTPTestRunner:
             'response_contains_payload': injected
         }
 
-    def test_sql_injection(self, payload: str) -> Dict[str, Any]:
+    def check_sql_injection(self, payload: str) -> Dict[str, Any]:
         """Test for SQL injection vulnerabilities."""
         # Test in login form
         test_data = {
@@ -231,7 +232,7 @@ class HTTPTestRunner:
             'response_content': response.text  # Include full response for debugging
         }
 
-    def test_xss_vulnerability(self, payload: str) -> Dict[str, Any]:
+    def check_xss_vulnerability(self, payload: str) -> Dict[str, Any]:
         """Test for XSS vulnerabilities."""
         # Test in various input fields
         test_data = {

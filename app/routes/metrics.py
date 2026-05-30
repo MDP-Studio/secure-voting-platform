@@ -4,6 +4,7 @@ This module exposes counters for security events and a small blueprint
 to serve Prometheus metrics at /metrics. If prometheus_client is not
 available, the counters degrade to no-op to avoid breaking the app.
 """
+import logging
 from flask import Blueprint, Response
 
 metrics_bp = Blueprint('metrics', __name__)
@@ -26,6 +27,7 @@ try:
 
 except Exception:
     # prometheus_client not installed or failed to import; provide no-op
+    logging.getLogger(__name__).debug("Handled exception in app/routes/metrics.py", exc_info=True)
     class _NoopCounter:
         def inc(self, *a, **k):
             return None
