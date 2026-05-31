@@ -10,6 +10,6 @@ geoip2>=5.2.0
 psutil==5.9.6
 PyJWT==2.12.1
 python-dotenv==1.2.2
-prometheus_client>=0.16.0
+prometheus_client>=0.25.0
 cryptography==48.0.0
 hvac>=2.4.0

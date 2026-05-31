@@ -12,4 +12,4 @@ psutil==5.9.6
 python-dotenv==1.2.2
 PyJWT==2.12.1
 hvac>=2.4.0
-prometheus_client>=0.16.0
+prometheus_client>=0.25.0
