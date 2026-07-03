@@ -171,6 +171,7 @@ The repository is configured to exclude local secrets and generated runtime file
 
 ## Documentation
 
+- [Threat Model Summary](http://127.0.0.1:5000/threat-model) - public in-app summary of assets, trust boundaries, threats, controls, residual risks, and evidence links.
 - [Password Policy](docs/PASSWORD_POLICY.md)
 - [Vault Setup](docs/VAULT_SETUP.md)
 - [Environment Detection](docs/ENVIRONMENT_DETECTION.md)

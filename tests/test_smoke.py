@@ -36,6 +36,14 @@ class TestSmokeTests:
         assert response.status_code == 200
         assert b'Sign in' in response.data or b'SecureVote' in response.data
 
+    def test_public_threat_model_page_loads(self, client):
+        """Test that the public threat model summary is reviewable without login."""
+        response = client.get('/threat-model')
+        assert response.status_code == 200
+        assert b'SecureVote Threat Model' in response.data
+        assert b'Residual Risks and Non-Claims' in response.data
+        assert b'tests/test_blind_signature.py' in response.data
+
     def test_successful_login(self, client):
         """Test successful login with test credentials."""
         # First, ensure test user exists

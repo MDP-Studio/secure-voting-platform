@@ -43,6 +43,12 @@ def healthz():
     return jsonify(status="ok")
 
 
+@main.route('/threat-model')
+def threat_model():
+    """Public, evidence-focused threat model summary."""
+    return render_template('threat_model.html')
+
+
 @main.route('/dashboard')
 @login_required
 def dashboard():

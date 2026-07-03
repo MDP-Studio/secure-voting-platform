@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Threat Model | SecureVote{% endblock %}
+
+{% block content %}
+<section class="sv-card mb-4">
+  <div class="card-body">
+    <span class="sv-badge sv-badge-info mb-3">Public summary</span>
+    <h1 class="h3 mb-3">SecureVote Threat Model</h1>
+    <p class="text-secondary mb-0">
+      SecureVote is a portfolio security prototype. This page summarizes what the
+      project is designed to demonstrate, what it does not claim, and where the
+      review evidence lives in the repository.
+    </p>
+  </div>
+</section>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <section class="sv-card h-100">
+      <div class="card-header">Assets and Trust Boundaries</div>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li>Voter identity, enrolment status, and encrypted PII stay in authenticated application flows.</li>
+          <li>Ballot authorization is separated from anonymous ballot submission through blind signatures.</li>
+          <li>Manager results, audit logs, and election administration are role-gated.</li>
+          <li>Vault transit signing is the preferred production-style result-signing boundary when configured.</li>
+          <li>MySQL, Vault, and Flask run behind nginx and ModSecurity in the Docker architecture.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-lg-6">
+    <section class="sv-card h-100">
+      <div class="card-header">In-Scope Threats</div>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li>Double voting and race conditions during vote authorization.</li>
+          <li>Linking authenticated voter identity to anonymous ballot content.</li>
+          <li>Credential guessing, reset abuse, weak passwords, and automated login attempts.</li>
+          <li>PII disclosure from database access or over-broad manager workflows.</li>
+          <li>Audit log tampering and unsigned result publication.</li>
+          <li>Unsafe production deployment with local demo controls enabled.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-lg-6">
+    <section class="sv-card h-100">
+      <div class="card-header">Implemented Controls</div>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li>RSA blind signatures, browser-side unblinding, and a cookie-free anonymous ballot endpoint.</li>
+          <li>Transactional vote receipts, row locking, and a unique voter receipt constraint.</li>
+          <li>ChaCha20-Poly1305 PII encryption and HMAC blind indexes for driver licence lookup.</li>
+          <li>Password policy, email OTP MFA, account lockout, anti-bot login nonce, honeypot, and Origin checks.</li>
+          <li>HMAC-chained JSONL audit logs plus manager-visible chain verification.</li>
+          <li>Environment detection that blocks developer controls and test seeding in production-like settings.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-lg-6">
+    <section class="sv-card h-100">
+      <div class="card-header">Residual Risks and Non-Claims</div>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li>This is not a certified, audited, or production election service.</li>
+          <li>No public internet election should rely on this prototype without independent security review.</li>
+          <li>Endpoint behavior, availability, coercion resistance, client compromise, and operational monitoring need more evidence.</li>
+          <li>Vault fallback keys are for local development and must not be treated as production signing custody.</li>
+          <li>Audit chains and signed results improve tamper evidence but do not replace independent election governance.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+</div>
+
+<section class="sv-card mt-4">
+  <div class="card-header">Evidence Map</div>
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Claim</th>
+            <th>Primary evidence</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Anonymous ballot flow</td>
+            <td><code>app/security/blind_signature.py</code>, <code>app/static/js/blind_vote.js</code>, <code>tests/test_blind_signature.py</code></td>
+          </tr>
+          <tr>
+            <td>PII encryption and blind index lookup</td>
+            <td><code>app/security/encryption.py</code>, <code>tests/test_pii_encryption_and_access.py</code></td>
+          </tr>
+          <tr>
+            <td>Double-vote prevention</td>
+            <td><code>app/vote_service.py</code>, <code>migrations/versions/20251005_add_uq_vote_user.py</code>, <code>tests/test_vote_concurrency.py</code></td>
+          </tr>
+          <tr>
+            <td>Production safety gates</td>
+            <td><code>app/environment.py</code>, <code>docs/PRODUCTION_SAFETY_REPORT.md</code></td>
+          </tr>
+          <tr>
+            <td>Vault-backed result signing</td>
+            <td><code>app/security/signing_service.py</code>, <code>docs/VAULT_SETUP.md</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}

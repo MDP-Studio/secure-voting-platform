@@ -32,6 +32,11 @@
 
         <div class="collapse navbar-collapse" id="navMain">
           <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('main.threat_model') }}">
+                <i class="fas fa-diagram-project me-1"></i>Threat Model
+              </a>
+            </li>
             {% if current_user.is_authenticated %}
               <li class="nav-item">
                 <a class="nav-link" href="{{ url_for('main.dashboard') }}">
