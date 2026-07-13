@@ -49,6 +49,12 @@ def threat_model():
     return render_template('threat_model.html')
 
 
+@main.route('/verification-ceremony')
+def verification_ceremony():
+    """Public, data-free rehearsal for independent result verification."""
+    return render_template('verification_ceremony.html')
+
+
 @main.route('/dashboard')
 @login_required
 def dashboard():

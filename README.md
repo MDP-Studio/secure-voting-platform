@@ -1,6 +1,6 @@
 # SecureVote: Secure Electronic Voting Platform
 
-SecureVote is a Flask-based secure voting system built to demonstrate security engineering evidence: voter anonymity, encrypted PII, tamper-evident audit logs, access control, WAF enforcement, Vault-backed signing, and race-condition testing.
+SecureVote is a Flask-based secure voting system built to demonstrate security engineering evidence: voter anonymity, encrypted PII, tamper-evident audit logs, access control, WAF enforcement, Vault-backed signing, race-condition testing, and a human-readable verification rehearsal.
 
 This started as a Secure Software Systems team project and was later completed, hardened, documented, and tested as a solo portfolio project.
 
@@ -27,6 +27,7 @@ I keep the public claim intentionally narrow: this is a reproducible security pr
 | WAF and rate limiting | nginx fronted by OWASP ModSecurity CRS with endpoint-specific request limits, security headers, and isolated backend service exposure | `nginx/conf.d/waf.conf`, `docker-compose.yml` |
 | Result integrity | Election result signing and verification through HashiCorp Vault Transit when configured, with local RSA fallback for development | `app/security/signing_service.py`, `app/security/vault_client.py`, `docs/VAULT_SETUP.md` |
 | Double-vote prevention | `SELECT ... FOR UPDATE`, transactional `VoteReceipt`, and a unique `user_id` constraint to stop TOCTOU double voting | `app/vote_service.py`, `tests/test_vote_concurrency.py` |
+| Verification rehearsal | Public, data-free observer checklist with explicit trust assumptions, stop conditions, non-claims, native controls, and announced progress | `app/templates/verification_ceremony.html`, `docs/VERIFICATION_CEREMONY.md`, `tests/test_verification_ceremony.py` |
 | Production safety | Environment-aware settings, split database binds, local-only developer dashboard controls, and deployment safety documentation | `app/environment.py`, `app/utils/db_utils.py`, `docs/PRODUCTION_SAFETY_REPORT.md` |
 
 ## What This Proves for Security Analyst Roles
@@ -35,6 +36,7 @@ I keep the public claim intentionally narrow: this is a reproducible security pr
 - Understands anonymity, integrity, authentication, authorization, auditability, and operational hardening tradeoffs.
 - Can write reproducible security tests for password policy, PII access, blind signatures, login automation controls, pagination limits, and race conditions.
 - Can document implementation evidence clearly enough for reviewers to verify claims from the code and tests.
+- Can separate cryptographic evidence from the human trust, accessibility, and governance assumptions around an election process.
 - Can reason about deployment boundaries: WAF in front, app isolated behind nginx, MySQL internal only, Vault used for signing, secrets excluded from git.
 
 ## Security Architecture
@@ -145,7 +147,7 @@ python -m pip install -r requirements.txt -r requirements-dev.txt
 python -m pytest
 ```
 
-Current collection: 104 pytest tests.
+Current collection: 112 pytest tests.
 
 | Test area | File | Count |
 | --- | --- | ---: |
@@ -155,7 +157,8 @@ Current collection: 104 pytest tests.
 | Account lockout, expiry, and password change | `tests/test_password_policy.py` | 19 |
 | Password validation and registration integration | `tests/test_password_validation.py` | 26 |
 | PII encryption and access control | `tests/test_pii_encryption_and_access.py` | 3 |
-| Core smoke tests, role access, voting, results | `tests/test_smoke.py` | 15 |
+| Core smoke tests, role access, voting, results | `tests/test_smoke.py` | 16 |
+| Verification rehearsal accessibility and behaviour | `tests/test_verification_ceremony.py` | 7 |
 | Concurrent vote race-condition checks | `tests/test_vote_concurrency.py` | 2 |
 | Login nonce, CLI blocking, honeypot, Origin/Referer checks | `tests/integration/test_login_robot_blocking.py` | 15 |
 
@@ -172,6 +175,9 @@ The repository is configured to exclude local secrets and generated runtime file
 ## Documentation
 
 - [Threat Model Summary](http://127.0.0.1:5000/threat-model) - public in-app summary of assets, trust boundaries, threats, controls, residual risks, and evidence links.
+- [Verification Rehearsal](http://127.0.0.1:5000/verification-ceremony) - public, data-free observer rehearsal that documents evidence limits, trust assumptions, stop conditions, and accessibility checks.
+- [Verification Ceremony Guide](docs/VERIFICATION_CEREMONY.md)
+- [Security Policy](SECURITY.md)
 - [Password Policy](docs/PASSWORD_POLICY.md)
 - [Vault Setup](docs/VAULT_SETUP.md)
 - [Environment Detection](docs/ENVIRONMENT_DETECTION.md)

@@ -43,7 +43,7 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: -0.01em;
 }
 
-a { color: var(--sv-primary); }
+a { color: var(--sv-primary-dark); }
 a:hover { color: var(--sv-primary-dark); }
 
 /* --- Navbar --- */
@@ -348,4 +348,93 @@ a:hover { color: var(--sv-primary-dark); }
   clip: rect(0,0,0,0);
   white-space: nowrap;
   border: 0;
+}
+
+/* --- Verification rehearsal --- */
+.ceremony-hero {
+  border-left: 5px solid var(--sv-warning);
+}
+
+.ceremony-package > div {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(0, 1.25fr);
+  gap: 1rem;
+  padding: .5rem 0;
+  border-bottom: 1px solid var(--sv-border);
+}
+
+.ceremony-package > div:last-child { border-bottom: 0; }
+.ceremony-package dt { font-weight: 600; }
+.ceremony-package dd { margin: 0; color: var(--sv-text-secondary); }
+
+.ceremony-progress progress {
+  display: block;
+  width: min(100%, 36rem);
+  height: 1.25rem;
+  accent-color: var(--sv-primary-dark);
+}
+
+#ceremony-reset {
+  min-height: 44px;
+  color: var(--sv-primary-dark);
+  border-color: var(--sv-primary-dark);
+}
+
+#ceremony-reset:hover,
+#ceremony-reset:focus {
+  color: #fff;
+  background: var(--sv-primary-dark);
+  border-color: var(--sv-primary-dark);
+}
+
+.ceremony-steps {
+  list-style-position: outside;
+  padding-left: 2rem;
+}
+
+.ceremony-steps li {
+  padding: .35rem 0 .75rem .5rem;
+}
+
+.ceremony-steps label {
+  display: inline-flex;
+  min-height: 44px;
+  max-width: calc(100% - 2rem);
+  flex-direction: column;
+  justify-content: center;
+  gap: .15rem;
+  padding: .25rem .5rem;
+  vertical-align: top;
+  cursor: pointer;
+}
+
+.ceremony-steps label span {
+  color: var(--sv-text-secondary);
+}
+
+.ceremony-steps .form-check-input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-top: .75rem;
+}
+
+.ceremony-steps .form-check-input:focus-visible {
+  outline: 3px solid var(--sv-primary-dark);
+  outline-offset: 3px;
+}
+
+.ceremony-failures details {
+  padding: .75rem 0;
+  border-bottom: 1px solid var(--sv-border);
+}
+
+.ceremony-failures details:first-child { padding-top: 0; }
+.ceremony-failures details:last-child { border-bottom: 0; padding-bottom: 0; }
+.ceremony-failures summary { min-height: 44px; font-weight: 600; cursor: pointer; }
+.ceremony-failures p { margin: .5rem 0 0 1.25rem; color: var(--sv-text-secondary); }
+
+@media (max-width: 575.98px) {
+  .ceremony-package > div { grid-template-columns: 1fr; gap: .15rem; }
+  .ceremony-steps { padding-left: 1.5rem; }
+  .ceremony-steps label { max-width: calc(100% - 1.75rem); }
 }

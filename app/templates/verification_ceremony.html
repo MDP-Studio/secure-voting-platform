@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block title %}Verification Rehearsal | SecureVote{% endblock %}
+
+{% block content %}
+<header class="sv-card ceremony-hero mb-4" aria-labelledby="ceremony-title">
+  <div class="card-body">
+    <span class="sv-badge sv-badge-warning mb-3">Mock ceremony</span>
+    <h1 id="ceremony-title" class="h2 mb-3">Election Verification Rehearsal</h1>
+    <p class="lead mb-3">
+      Practise how observers would compare a published result package, record
+      disagreements, and stop on failed evidence checks.
+    </p>
+    <div class="alert alert-warning mb-0" role="note">
+      <strong>Prototype boundary:</strong> this rehearsal does not load, verify,
+      transmit, or store real election data. Completing it does not prove that an
+      election is correct, private, accessible, certified, or safe to operate.
+    </div>
+  </div>
+</header>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-7">
+    <section class="sv-card h-100" aria-labelledby="observer-instructions-title">
+      <h2 class="card-header h5" id="observer-instructions-title">Observer instructions</h2>
+      <div class="card-body">
+        <ol class="mb-0">
+          <li>Use at least two observers who obtain the mock evidence package independently.</li>
+          <li>Read identifiers and digest values aloud, then compare each character rather than relying on colour or position.</li>
+          <li>Record an accept or stop decision for every check. A disagreement is a stop condition, not a majority vote.</li>
+          <li>Preserve the package and notes when a check fails. Do not replace evidence silently or restart until the discrepancy is explained.</li>
+          <li>Have an independent observer explain what the ceremony did and did not prove before closing the rehearsal.</li>
+        </ol>
+      </div>
+    </section>
+  </div>
+  <div class="col-lg-5">
+    <section class="sv-card h-100" aria-labelledby="mock-package-title">
+      <h2 class="card-header h5" id="mock-package-title">Mock evidence package</h2>
+      <div class="card-body">
+        <dl class="ceremony-package mb-3">
+          <div><dt>Exercise</dt><dd>SV-REHEARSAL-01</dd></div>
+          <div><dt>Result package</dt><dd>Sample only</dd></div>
+          <div><dt>Verification key</dt><dd>Not loaded</dd></div>
+          <div><dt>Ballot records</dt><dd>Not loaded</dd></div>
+        </dl>
+        <p class="small text-secondary mb-0">
+          These labels establish a shared script. They are not cryptographic
+          evidence and must not be copied into a real election record.
+        </p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<section class="sv-card mb-4" aria-labelledby="rehearsal-checklist-title">
+  <h2 class="card-header h5" id="rehearsal-checklist-title">Run the rehearsal checklist</h2>
+  <div class="card-body">
+    <p id="checklist-help" class="text-secondary">
+      Use Tab to move through the checklist and Space to change a checkbox. Your
+      choices stay in this browser tab and are discarded when the page closes.
+    </p>
+
+    <div class="ceremony-progress mb-4">
+      <label for="ceremony-progress" class="form-label">Rehearsal progress</label>
+      <progress id="ceremony-progress" value="0" max="6" aria-describedby="ceremony-status"></progress>
+      <output id="ceremony-status" class="d-block mt-2" role="status" aria-live="polite">
+        0 of 6 rehearsal checks marked complete.
+      </output>
+    </div>
+
+    <form id="ceremony-form" aria-describedby="checklist-help ceremony-limit">
+      <fieldset>
+        <legend class="h5">Observer record</legend>
+        <ol class="ceremony-steps">
+          <li>
+            <input class="form-check-input" type="checkbox" id="ceremony-scope" data-ceremony-check>
+            <label for="ceremony-scope">
+              <strong>Confirm the scope briefing.</strong>
+              <span>Both observers can state that this is a data-free rehearsal and not a real election verification.</span>
+            </label>
+          </li>
+          <li>
+            <input class="form-check-input" type="checkbox" id="ceremony-source" data-ceremony-check>
+            <label for="ceremony-source">
+              <strong>Compare independent package sources.</strong>
+              <span>Observers practise obtaining the package through separate channels and stop if identifiers differ.</span>
+            </label>
+          </li>
+          <li>
+            <input class="form-check-input" type="checkbox" id="ceremony-digest" data-ceremony-check>
+            <label for="ceremony-digest">
+              <strong>Rehearse the digest comparison.</strong>
+              <span>Observers read a hypothetical digest character by character and document a mismatch as a failure.</span>
+            </label>
+          </li>
+          <li>
+            <input class="form-check-input" type="checkbox" id="ceremony-signature" data-ceremony-check>
+            <label for="ceremony-signature">
+              <strong>Rehearse signature verification.</strong>
+              <span>Observers identify the expected authority key, verifier, and failure output without claiming that a real signature was checked.</span>
+            </label>
+          </li>
+          <li>
+            <input class="form-check-input" type="checkbox" id="ceremony-reconcile" data-ceremony-check>
+            <label for="ceremony-reconcile">
+              <strong>Rehearse tally and audit reconciliation.</strong>
+              <span>Observers check that hypothetical totals reconcile and that an audit-chain failure produces a stop decision.</span>
+            </label>
+          </li>
+          <li>
+            <input class="form-check-input" type="checkbox" id="ceremony-limits" data-ceremony-check>
+            <label for="ceremony-limits">
+              <strong>Read back the evidence limits.</strong>
+              <span>An independent observer explains what remains unproven, including voter intent, endpoint safety, coercion resistance, and governance.</span>
+            </label>
+          </li>
+        </ol>
+      </fieldset>
+
+      <p id="ceremony-limit" class="small text-secondary">
+        Checklist state is not sent to the server and does not create an audit record.
+      </p>
+      <button id="ceremony-reset" class="btn btn-outline-primary" type="reset">Reset rehearsal</button>
+    </form>
+
+    <div id="ceremony-complete" class="alert alert-success mt-4" role="note" hidden>
+      <strong>Rehearsal checklist complete.</strong> You have practised the observer
+      sequence. No real election result or cryptographic proof has been verified.
+    </div>
+    <noscript>
+      <p class="alert alert-info mt-4">
+        JavaScript is disabled. The checklist remains keyboard accessible, but the
+        progress announcement and reset focus behaviour are unavailable.
+      </p>
+    </noscript>
+  </div>
+</section>
+
+<div class="row g-4 mb-4">
+  <div class="col-lg-6">
+    <section class="sv-card h-100" aria-labelledby="proves-title">
+      <h2 class="card-header h5" id="proves-title">What completion shows</h2>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li>The observer sequence and stop conditions can be reviewed.</li>
+          <li>Native controls support keyboard-only checklist operation.</li>
+          <li>Status changes are announced through a live region.</li>
+          <li>The prototype communicates evidence limits before and after completion.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+  <div class="col-lg-6">
+    <section class="sv-card h-100" aria-labelledby="does-not-prove-title">
+      <h2 class="card-header h5" id="does-not-prove-title">What completion does not prove</h2>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li>That any ballot was cast, recorded, counted, or kept secret.</li>
+          <li>That a signing key belongs to an election authority or remained secure.</li>
+          <li>That voter devices, registration, custody, availability, and governance were trustworthy.</li>
+          <li>That the system is end-to-end verifiable, independently certified, or production ready.</li>
+          <li>That every assistive-technology combination works without manual testing.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <section class="sv-card h-100" aria-labelledby="assumptions-title">
+      <h2 class="card-header h5" id="assumptions-title">Trust assumptions for a real ceremony</h2>
+      <div class="card-body">
+        <ul class="mb-0">
+          <li>The published verification key is authenticated through an independent channel.</li>
+          <li>Observers receive complete, unmodified evidence packages.</li>
+          <li>Verification software and observer devices are not compromised.</li>
+          <li>Published tallies account for every accepted ballot and rejected-ballot handling is governed.</li>
+          <li>Independent accessibility, security, legal, and operational reviews cover the full election process.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+  <div class="col-lg-6">
+    <section class="sv-card h-100" aria-labelledby="failure-cases-title">
+      <h2 class="card-header h5" id="failure-cases-title">Failure cases and observer response</h2>
+      <div class="card-body ceremony-failures">
+        <details>
+          <summary>Package identifier or digest mismatch</summary>
+          <p>Stop, preserve both copies, record their sources, and escalate before using either package.</p>
+        </details>
+        <details>
+          <summary>Missing key or invalid result signature</summary>
+          <p>Stop publication. Record the verifier, key identifier, command, and failure result without exposing secret material.</p>
+        </details>
+        <details>
+          <summary>Tally or audit chain does not reconcile</summary>
+          <p>Do not certify the result. Preserve the evidence and invoke the documented investigation and recount process.</p>
+        </details>
+        <details>
+          <summary>An observer cannot reproduce or access a check</summary>
+          <p>Treat reproducibility or accessibility failure as unresolved. Provide an equivalent independent method before continuing.</p>
+        </details>
+      </div>
+    </section>
+  </div>
+</div>
+
+<section class="sv-card mt-4" aria-labelledby="ceremony-evidence-title">
+  <h2 class="card-header h5" id="ceremony-evidence-title">Review evidence</h2>
+  <div class="card-body">
+    <p>
+      The rehearsal design, test scope, and manual assistive-technology checks are
+      documented in <code>docs/VERIFICATION_CEREMONY.md</code>. Related security
+      boundaries are summarized on the <a href="{{ url_for('main.threat_model') }}">threat model page</a>.
+    </p>
+    <p class="mb-0">
+      Structural accessibility and behaviour checks run in
+      <code>tests/test_verification_ceremony.py</code>. Manual NVDA or VoiceOver,
+      keyboard-only, zoom, and high-contrast checks remain required before any
+      accessibility claim beyond this prototype.
+    </p>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='js/verification_ceremony.js') }}"></script>
+{% endblock %}
