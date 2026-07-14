@@ -45,6 +45,10 @@ def test_voter_account_can_persist_voting_state_but_not_manage_rosters():
     try:
         _assert_allowed(
             connection,
+            "SELECT id FROM election WHERE id = -1 FOR SHARE",
+        )
+        _assert_denied(
+            connection,
             "SELECT id FROM election WHERE id = -1 FOR UPDATE",
         )
         _assert_allowed(
