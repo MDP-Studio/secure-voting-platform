@@ -6,6 +6,7 @@ from flask import (
 from app.helpers import flash_once
 from flask_login import login_user, logout_user, current_user
 import logging
+from urllib.parse import urlsplit
 
 import re
 import os
@@ -19,10 +20,11 @@ except Exception:
 
 from werkzeug.security import generate_password_hash
 from app import db
-from app.models import User, Role, Region, ElectoralRoll
+from app.models import ElectoralRoll, OtpChallenge, Region, Role, User
 from app.security.password_validator import validate_password_strength, PasswordValidationError
 import time
 from app.security.jwt_helpers import issue_token
+from app.services.otp_service import issue_otp_challenge, verify_otp_challenge
 
 # --- Blueprint Setup ---
 auth = Blueprint('auth', __name__)
@@ -32,6 +34,25 @@ auth = Blueprint('auth', __name__)
 # -----------------------------
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 EMAIL_RE    = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _safe_relative_next(candidate: str | None) -> str | None:
+    """Return a same-origin absolute path suitable for a login redirect."""
+    if not isinstance(candidate, str) or not candidate.startswith('/'):
+        return None
+    if candidate.startswith('//') or '\\' in candidate:
+        return None
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        logging.getLogger(__name__).debug(
+            "Rejected malformed same-origin login redirect",
+            exc_info=True,
+        )
+        return None
+    if parsed.scheme or parsed.netloc:
+        return None
+    return candidate
 
 
 def _checksum11(s: str) -> int:
@@ -119,15 +140,18 @@ def login():
             except Exception:
                 logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
                 pass
-            forwarded_for = request.headers.get('X-Forwarded-For')
-            user_ip = forwarded_for.split(',')[0].strip() if forwarded_for else request.remote_addr
+            # ProxyFix has already selected the address supplied by the one
+            # trusted reverse-proxy hop. Never reparse client-controlled XFF.
+            user_ip = request.remote_addr
             ua = request.headers.get('User-Agent', '<unknown>')
             logging.warning(f"GOTCHA triggered: gotcha='{gotcha}' username='{request.form.get('username')}' ip={user_ip} ua={ua}")
             flash('Bot-like activity detected. If you are a human, please try again.')
             return render_template('login.html', prev_username=request.form.get('username'))
 
         username = request.form.get('username', '').strip()
-        password = request.form.get('password', '').strip()
+        # Passwords are opaque credentials. Preserve intentional leading and
+        # trailing whitespace exactly as registration, change, and reset do.
+        password = request.form.get('password', '')
         otp_input = request.form.get('totp', '').strip()
 
         # Skip security checks when in TESTING mode
@@ -256,8 +280,7 @@ def login():
         # --- Step 2: password must match ---
         if not password or not user.check_password(password):
             # Generic message — don't leak whether user exists or password was wrong.
-            forwarded_for = request.headers.get('X-Forwarded-For')
-            user_ip = forwarded_for.split(',')[0].strip() if forwarded_for else request.remote_addr
+            user_ip = request.remote_addr
             logging.warning(f"Failed login attempt for username: '{username}' from IP: {user_ip}")
             # No sleep — the password hash computation already provides constant-time behavior.
             user.record_failed_login()
@@ -271,28 +294,21 @@ def login():
             return render_template('login.html', prev_username=username)
           
 
+        requested_next = _safe_relative_next(request.args.get('next'))
+
         # --- MFA gate: if enabled, redirect to OTP verification page ---
         if current_app.config.get('ENABLE_MFA', False):
             # Store the authenticated user ID in session for the OTP step.
             # The user is NOT logged in yet — they must pass OTP first.
             session['mfa_pending_user_id'] = user.id
-            session['mfa_pending_next'] = request.args.get('next', '')
+            session['mfa_pending_next'] = requested_next or ''
 
-            # Auto-send OTP email
-            # SECURITY: Store only the HMAC hash of the OTP in the session,
-            # not the plaintext code. Flask sessions are signed but not
-            # encrypted — the plaintext would be readable from the cookie.
+            # Auto-send OTP email. The session contains only an opaque challenge
+            # ID; the HMAC digest, expiry, and attempt count stay server-side.
+            challenge_id = None
             try:
-                import random, string, hashlib, hmac as _hmac
-                code = ''.join(random.choices(string.digits, k=6))
-                otp_hash = _hmac.new(
-                    (current_app.config.get('SECRET_KEY') or 'dev').encode(),
-                    code.encode(), hashlib.sha256
-                ).hexdigest()
-                session['otp_hash'] = otp_hash
-                session['otp_user'] = user.id
-                session['otp_expires_at'] = time.time() + 300
-                session['otp_attempts'] = 0
+                challenge_id, code = issue_otp_challenge(user.id, "login_mfa")
+                session['mfa_challenge_id'] = challenge_id
 
                 from flask_mail import Message
                 from app import mail
@@ -306,13 +322,21 @@ def login():
                     ),
                 )
                 mail.send(msg)
-            except Exception as e:
-                current_app.logger.error(f"Failed to send MFA OTP: {e}")
+            except Exception:
+                current_app.logger.error("Failed to issue or send MFA OTP", exc_info=True)
+                db.session.rollback()
+                if challenge_id:
+                    OtpChallenge.query.filter_by(id=challenge_id).delete()
+                    db.session.commit()
+                for key in ('mfa_challenge_id', 'mfa_pending_user_id', 'mfa_pending_next'):
+                    session.pop(key, None)
+                flash('Verification code could not be sent. Please try again.', 'error')
+                return redirect(url_for('auth.login'))
 
             return redirect(url_for('auth.verify_mfa'))
 
         # --- No MFA: complete login directly ---
-        return _complete_login(user, request.args.get('next'))
+        return _complete_login(user, requested_next)
 
     # GET request — render the login form
     return render_template('login.html')
@@ -320,16 +344,28 @@ def login():
 
 def _complete_login(user, next_url=None):
     """Finalize login: reset attempts, check password expiry, issue JWT."""
+    next_url = _safe_relative_next(next_url)
     user.reset_failed_logins()
     db.session.commit()
 
     if user.is_password_expired():
         flash('Your password has expired. Please change it to continue.', 'warning')
         login_user(user)
-        return redirect(url_for('password.change_password'))
+        token = issue_token(user.id, user.session_version)
+        resp = make_response(redirect(url_for('password.change_password')))
+        secure = bool(int(current_app.config.get('SESSION_COOKIE_SECURE', 0)))
+        samesite = current_app.config.get('SESSION_COOKIE_SAMESITE', 'Lax')
+        resp.set_cookie(
+            'session_token',
+            token,
+            httponly=True,
+            secure=secure,
+            samesite=samesite,
+        )
+        return resp
 
     login_user(user)
-    token = issue_token(user.id)
+    token = issue_token(user.id, user.session_version)
 
     # Role-based redirect — all roles go to main dashboard
     if user.is_delegate:
@@ -362,44 +398,40 @@ def verify_mfa():
         return redirect(url_for('auth.login'))
 
     if request.method == 'POST':
-        import hashlib, hmac as _hmac
         otp_input = request.form.get('otp', '').strip()
-        sess_hash = session.get('otp_hash')
-        sess_user = session.get('otp_user')
-        expires_at = session.get('otp_expires_at')
+        challenge_id = session.get('mfa_challenge_id')
 
-        if not (sess_hash and sess_user and expires_at):
+        if not challenge_id:
             flash('Verification code expired. Please sign in again.', 'error')
             session.pop('mfa_pending_user_id', None)
             return redirect(url_for('auth.login'))
 
-        if sess_user != user.id or time.time() > float(expires_at):
-            for k in ('otp_hash', 'otp_user', 'otp_expires_at', 'otp_attempts', 'mfa_pending_user_id'):
-                session.pop(k, None)
+        result = verify_otp_challenge(
+            challenge_id,
+            user.id,
+            "login_mfa",
+            otp_input,
+        )
+        if result in {"missing", "expired"}:
+            for key in ('mfa_challenge_id', 'mfa_pending_user_id', 'mfa_pending_next'):
+                session.pop(key, None)
             flash('Verification code expired. Please sign in again.', 'error')
             return redirect(url_for('auth.login'))
 
-        attempts = session.get('otp_attempts', 0)
-        if attempts >= 5:
-            for k in ('otp_hash', 'otp_user', 'otp_expires_at', 'otp_attempts', 'mfa_pending_user_id'):
-                session.pop(k, None)
+        if result == "locked":
+            for key in ('mfa_challenge_id', 'mfa_pending_user_id', 'mfa_pending_next'):
+                session.pop(key, None)
             flash('Too many attempts. Please sign in again.', 'error')
             return redirect(url_for('auth.login'))
 
-        # Compare HMAC hash of input against stored hash (constant-time)
-        input_hash = _hmac.new(
-            (current_app.config.get('SECRET_KEY') or 'dev').encode(),
-            otp_input.encode(), hashlib.sha256
-        ).hexdigest()
-        if not otp_input or not _hmac.compare_digest(input_hash, sess_hash):
-            session['otp_attempts'] = attempts + 1
+        if result != "valid":
             flash('Invalid verification code.', 'error')
             return render_template('verify_mfa.html', email=user.email)
 
         # OTP valid — clear session and complete login
         next_url = session.get('mfa_pending_next', '')
-        for k in ('otp_hash', 'otp_user', 'otp_expires_at', 'otp_attempts', 'mfa_pending_user_id', 'mfa_pending_next'):
-            session.pop(k, None)
+        for key in ('mfa_challenge_id', 'mfa_pending_user_id', 'mfa_pending_next'):
+            session.pop(key, None)
 
         return _complete_login(user, next_url or None)
 
@@ -526,9 +558,8 @@ def register():
         if not validate_driver_lic(lic_no, lic_state or None):
             flash_once("Invalid driver licence number")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
-        if User.query.filter_by(driver_lic_no=lic_no).first():
-            flash_once("Driver licence already bound to another account")
-        # Uniqueness check via deterministic hash (since licence is stored encrypted)
+        # Randomized AEAD ciphertext cannot support equality queries. Use the
+        # keyed, normalized blind index as the only duplicate lookup.
         from app.models import _hash_lic
         lic_hash = _hash_lic(lic_no)
         if lic_hash and User.query.filter_by(driver_lic_hash=lic_hash).first():
@@ -538,9 +569,14 @@ def register():
         # Ensure voter role exists
         voter_role = Role.query.filter_by(name="voter").first()
         if voter_role is None:
-            voter_role = Role(name="voter", description="Can cast one vote")
-            db.session.add(voter_role)
-            db.session.flush()
+            current_app.logger.error("Registration refused because the voter role is missing")
+            flash("Registration is temporarily unavailable. Please contact support.")
+            return render_template(
+                'register.html',
+                prev_username=username,
+                prev_email=email,
+                prev_state=lic_state,
+            )
 
         # 1) Create user as PENDING
         user = User(
@@ -549,7 +585,6 @@ def register():
             driver_lic_no=lic_no,
             driver_lic_state=lic_state.upper() if lic_state else None,
             role=voter_role,
-            has_voted=False,
             account_status="pending",  # waiting for admin approval
         )
         # Ensure hash is set (event listeners will also do this, but set eagerly for safety)
@@ -583,14 +618,24 @@ def register():
 
         try:
             db.session.commit()
-        except Exception as e:
-            logging.getLogger(__name__).debug("Handled exception in app/auth.py", exc_info=True)
+        except Exception:
+            current_app.logger.exception("Failed to commit voter registration")
             db.session.rollback()
-            flash_once(f"Failed to create user: {e}")
+            flash_once("Registration could not be completed. Please try again.")
             return render_template('register.html', prev_username=username, prev_email=email, prev_state=lic_state)
 
-        # On success, notify user and redirect to login
-        flash_once("Registration submitted. Waiting for admin approval.")
+        # The single registration flow always sends an ownership challenge.
+        # Approval and voting remain unavailable until it is completed.
+        from app.routes.registration import send_verification_email
+        if send_verification_email(user):
+            flash_once(
+                "Registration submitted. Verify your email, then wait for admin approval."
+            )
+        else:
+            flash_once(
+                "Registration submitted, but the verification email could not be sent. "
+                "Use Resend verification after email delivery is restored."
+            )
         return redirect(url_for('auth.login'))
 
     return render_template('register.html')

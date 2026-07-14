@@ -1,0 +1,19 @@
+.git
+.github
+.pytest_cache
+.venv
+__pycache__
+*.py[cod]
+*.db
+*.sqlite*
+*.log
+*.pem
+.env
+.env.*
+instance
+data
+docs
+issues
+nginx
+tests
+Requirements Table.xlsx

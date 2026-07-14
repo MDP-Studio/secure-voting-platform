@@ -8,7 +8,16 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from .security.password_validator import validate_password_strength, PasswordValidationError
 from .security.encryption import EncryptedType
-from sqlalchemy import event
+from sqlalchemy import event, inspect as sqlalchemy_inspect
+
+
+# Physical VARCHAR capacities for Base64-encoded svpii:v1 envelopes. The long
+# capacity covers 255 Unicode code points at four UTF-8 bytes each, plus nonce,
+# tag, marker, and Base64 expansion. The short capacity does the same for the
+# legacy 50-character state/postcode limits.
+ENCRYPTED_LICENCE_COLUMN_LENGTH = 255
+ENCRYPTED_LONG_PII_COLUMN_LENGTH = 1536
+ENCRYPTED_SHORT_PII_COLUMN_LENGTH = 512
 
 def utcnow_naive():
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -43,9 +52,12 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
 
     # Driver licence (used for identity binding)
-    # Store the licence number encrypted at rest; use a deterministic SHA-256 hash
-    # for uniqueness and lookup to avoid leaking plaintext while supporting queries.
-    driver_lic_no = db.Column(EncryptedType(length=255), nullable=False)
+    # Store the licence number encrypted at rest; use a keyed HMAC-SHA256 blind
+    # index for uniqueness and lookup without querying randomized ciphertext.
+    driver_lic_no = db.Column(
+        EncryptedType(length=ENCRYPTED_LICENCE_COLUMN_LENGTH),
+        nullable=False,
+    )
     driver_lic_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
     driver_lic_state = db.Column(db.String(8), nullable=True)  # e.g., VIC/NSW/QLD/...
 
@@ -57,11 +69,18 @@ class User(UserMixin, db.Model):
     account_status = db.Column(db.String(20), nullable=False, default="pending")
 
     email_verified = db.Column(db.Boolean, default=False, nullable=False)
-    has_voted = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=utcnow_naive)
     
     # Password policy fields
     password_changed_at = db.Column(db.DateTime, default=utcnow_naive)
+    # Monotonic authentication epoch. Every password change increments this
+    # value so all previously issued JWTs and password-reset links fail closed.
+    session_version = db.Column(
+        db.Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
     failed_login_attempts = db.Column(db.Integer, default=0, nullable=False)
     account_locked_until = db.Column(db.DateTime, nullable=True)
 
@@ -86,6 +105,7 @@ class User(UserMixin, db.Model):
         
         # Update password change timestamp
         self.password_changed_at = utcnow_naive()
+        self.session_version = int(self.session_version or 0) + 1
         
         # Reset failed login attempts when password is changed
         self.failed_login_attempts = 0
@@ -181,14 +201,13 @@ def _get_hash_pepper() -> bytes:
     import os
     pepper = os.environ.get("LICENSE_HASH_PEPPER", "")
     if not pepper:
-        # Fall back to SECRET_KEY if pepper not set (dev convenience).
-        # Production deployments MUST set LICENSE_HASH_PEPPER.
         from flask import current_app
-        try:
-            pepper = current_app.config.get("SECRET_KEY", "fallback-dev-pepper")
-        except RuntimeError:
-            logging.getLogger(__name__).debug("Handled exception in app/models.py", exc_info=True)
-            pepper = "fallback-dev-pepper"
+
+        if not current_app.config.get("TESTING"):
+            raise RuntimeError("LICENSE_HASH_PEPPER is required outside test mode")
+        pepper = current_app.config.get("SECRET_KEY")
+        if not pepper:
+            raise RuntimeError("A test SECRET_KEY is required for licence hashing")
     return pepper.encode("utf-8")
 
 
@@ -217,8 +236,17 @@ def _user_set_lic_hash_before_insert(mapper, connection, target: "User"):
 
 @event.listens_for(User, "before_update")
 def _user_set_lic_hash_before_update(mapper, connection, target: "User"):
-    # Recompute when the plaintext value changes
-    target.driver_lic_hash = _hash_lic(getattr(target, "driver_lic_no", None)) or target.driver_lic_hash
+    """Recompute the blind index only for a real decrypted licence change."""
+    history = sqlalchemy_inspect(target).attrs.driver_lic_no.history
+    if not history.has_changes():
+        return
+
+    current = history.added[0] if history.added else target.driver_lic_no
+    previous = history.deleted[0] if history.deleted else None
+    if previous is not None and _normalize_lic(previous) == _normalize_lic(current):
+        return
+
+    target.driver_lic_hash = _hash_lic(current) or target.driver_lic_hash
 
 
 # ---- Electoral Roll ----
@@ -227,17 +255,39 @@ class ElectoralRoll(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
     roll_number = db.Column(db.String(50), unique=True, nullable=False)
-    driver_license_number = db.Column(EncryptedType(length=255), unique=True, nullable=False)
+    driver_license_number = db.Column(
+        EncryptedType(length=ENCRYPTED_LICENCE_COLUMN_LENGTH),
+        nullable=False,
+    )
     # Deterministic hash for uniqueness and lookups that do not leak plaintext
     driver_license_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)
 
-    full_name = db.Column(EncryptedType(length=255), nullable=False)
+    full_name = db.Column(
+        EncryptedType(length=ENCRYPTED_LONG_PII_COLUMN_LENGTH),
+        nullable=False,
+    )
     date_of_birth = db.Column(db.Date, nullable=False)
-    address_line1 = db.Column(EncryptedType(length=255), nullable=False)
-    address_line2 = db.Column(EncryptedType(length=255))
-    suburb = db.Column(EncryptedType(length=255), nullable=False)
-    state = db.Column(EncryptedType(length=50), nullable=False)
-    postcode = db.Column(EncryptedType(length=50), nullable=False)
+    address_line1 = db.Column(
+        EncryptedType(length=ENCRYPTED_LONG_PII_COLUMN_LENGTH),
+        nullable=False,
+    )
+    address_line2 = db.Column(
+        EncryptedType(length=ENCRYPTED_LONG_PII_COLUMN_LENGTH)
+    )
+    suburb = db.Column(
+        EncryptedType(length=ENCRYPTED_LONG_PII_COLUMN_LENGTH),
+        nullable=False,
+    )
+    # Versioned AEAD envelopes include nonce, tag, format marker, and Base64
+    # expansion, so short plaintext fields still need full ciphertext capacity.
+    state = db.Column(
+        EncryptedType(length=ENCRYPTED_SHORT_PII_COLUMN_LENGTH),
+        nullable=False,
+    )
+    postcode = db.Column(
+        EncryptedType(length=ENCRYPTED_SHORT_PII_COLUMN_LENGTH),
+        nullable=False,
+    )
 
     region_id = db.Column(db.Integer, db.ForeignKey("regions.id"), nullable=False)
     region = db.relationship("Region")
@@ -271,17 +321,30 @@ def _roll_set_lic_hash_before_update(mapper, connection, target: "ElectoralRoll"
 # ---- Elections ----
 class Election(db.Model):
     __tablename__ = "election"
+    __table_args__ = (
+        db.CheckConstraint(
+            "status IN ('draft', 'open', 'closed')",
+            name="ck_election_status",
+        ),
+    )
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
     status = db.Column(db.String(20), nullable=False, default="draft")  # draft, open, closed
     open_at = db.Column(db.DateTime, nullable=True)
     close_at = db.Column(db.DateTime, nullable=True)
+    blind_signing_key_id = db.Column(db.String(64), nullable=True)
+    blind_key_recovery_required = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False,
+        server_default=db.false(),
+    )
     created_by = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow_naive)
 
     @property
     def is_open(self):
-        if self.status != "open":
+        if self.status != "open" or self.blind_key_recovery_required:
             return False
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         if self.open_at and now < self.open_at:
@@ -297,6 +360,9 @@ class Election(db.Model):
 # ---- Candidates ----
 class Candidate(db.Model):
     __tablename__ = "candidate"
+    __table_args__ = (
+        db.UniqueConstraint("id", "election_id", name="uq_candidate_id_election"),
+    )
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     party = db.Column(db.String(120), nullable=True)
@@ -304,6 +370,17 @@ class Candidate(db.Model):
 
     region_id = db.Column(db.Integer, db.ForeignKey("regions.id"), nullable=False)
     region = db.relationship("Region")
+
+    election_id = db.Column(
+        db.Integer,
+        db.ForeignKey("election.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    election = db.relationship(
+        "Election",
+        backref=db.backref("candidates", lazy="dynamic", cascade="all, delete-orphan"),
+    )
 
     votes = db.relationship(
         "Vote",
@@ -328,74 +405,207 @@ class Vote(db.Model):
     the voter's identity.  There is no stored foreign key, HMAC, or
     deterministic derivation linking a Vote back to a User.
 
-    Double-vote prevention is enforced by the ``VoteReceipt`` table
-    (UNIQUE constraint on user_id) which is inserted in the same
-    transaction as the ballot.  If a concurrent insert violates the
-    unique constraint, the entire transaction — including the anonymous
-    ballot — is rolled back.
+    The supported ballot flow uses a one-time identity-side authorization at
+    issuance and an identity-free ``SpentBallotNullifier`` in the cast
+    transaction. Neither identity-side table stores the candidate choice.
 
-    Limitation: the server process transiently knows both identity and
-    ballot during the HTTP request.  True end-to-end verifiable anonymity
-    (blind signatures, homomorphic tallying) requires a multi-party
-    protocol beyond the scope of a server-side web application.
+    Limitation: blind submission still has network and timing metadata. True
+    end-to-end verifiability and coercion resistance require a broader protocol.
     """
     __tablename__ = "vote"
+    __table_args__ = (
+        db.ForeignKeyConstraint(
+            ["candidate_id", "election_id"],
+            ["candidate.id", "candidate.election_id"],
+            name="fk_vote_candidate_election",
+            ondelete="CASCADE",
+        ),
+        db.UniqueConstraint("voter_token", name="uq_vote_voter_token"),
+    )
     id = db.Column(db.Integer, primary_key=True)
     voter_token = db.Column(db.String(64), nullable=False)
-    candidate_id = db.Column(db.Integer, db.ForeignKey("candidate.id", ondelete="CASCADE"),
-                             nullable=False, index=True)
+    candidate_id = db.Column(db.Integer, nullable=False, index=True)
+    election_id = db.Column(
+        db.Integer,
+        db.ForeignKey("election.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     position = db.Column(db.String(120), nullable=False)
     vote_hash = db.Column(db.String(64))
     created_at = db.Column(db.DateTime, default=utcnow_naive)
 
 
-# ---- Vote Receipts (double-vote prevention) ----
+# ---- Legacy direct-vote receipts (migration compatibility only) ----
 class VoteReceipt(db.Model):
     """
-    Database-level one-vote-per-user enforcement.
+    Historical identity-side receipt from the retired direct ballot path.
 
     This table stores ONLY the fact that a user has voted — NOT which
-    candidate they voted for.  The UNIQUE constraint on user_id is the
-    authoritative guard against double-voting, surviving any application-
-    level race conditions (TOCTOU).
+    candidate they voted for. The UNIQUE constraint on user_id plus
+    election_id is the authoritative same-election guard against
+    double-voting, surviving application-level race conditions (TOCTOU).
 
-    Inserted in the same transaction as the anonymous Vote record.  If a
-    concurrent thread tries to insert a duplicate receipt, the DB rejects
-    the entire transaction, rolling back the ballot as well.
+    New ballots do not create this row. The record remains so elections that
+    received direct ballots before the anonymity-only cutover cannot issue a
+    second blind authorization to the same voter.
     """
     __tablename__ = "vote_receipt"
     __table_args__ = (
-        db.UniqueConstraint('user_id', name='uq_vote_receipt_user'),
+        db.UniqueConstraint(
+            "user_id",
+            "election_id",
+            name="uq_vote_receipt_user_election",
+        ),
     )
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
                         nullable=False, index=True)
+    election_id = db.Column(
+        db.Integer,
+        db.ForeignKey("election.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user = db.relationship(
+        "User",
+        backref=db.backref("vote_receipts", lazy="dynamic"),
+    )
     voted_at = db.Column(db.DateTime, default=utcnow_naive)
 
 # ---- Blind Signature Tokens ----
 class BlindSignatureToken(db.Model):
     """
-    Tracks blind signature token issuance for the anonymous voting protocol.
+    Identity-side record that exactly one blind signature was issued.
 
-    Issued during Phase 1 (authenticated token request). The voter's
-    identity is linked to the token, but the ballot content is blinded
-    and invisible to the server. During Phase 2 (anonymous ballot cast),
-    the token is matched via ballot_nonce_hash and marked redeemed.
-
-    UNIQUE(user_id) prevents a voter from obtaining multiple tokens.
-    UNIQUE(ballot_nonce_hash) prevents replay of the same ballot.
+    This row deliberately contains no ballot nonce, signature, candidate, cast
+    timestamp, or redemption state. That separation prevents an anonymous
+    ballot from being deterministically joined back to the authenticated voter.
+    A lost authorization fails closed instead of allowing a second ballot.
     """
     __tablename__ = "blind_signature_token"
     __table_args__ = (
-        db.UniqueConstraint('user_id', name='uq_blind_sig_token_user'),
+        db.UniqueConstraint(
+            "user_id",
+            "election_id",
+            name="uq_blind_sig_token_user_election",
+        ),
     )
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"),
                         nullable=False, index=True)
-    ballot_nonce_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
-    issued_at = db.Column(db.DateTime, default=utcnow_naive)
-    redeemed = db.Column(db.Boolean, default=False, nullable=False)
-    redeemed_at = db.Column(db.DateTime, nullable=True)
+    election_id = db.Column(
+        db.Integer,
+        db.ForeignKey("election.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+
+class SpentBallotNullifier(db.Model):
+    """Identity-free replay guard for anonymously submitted ballots."""
+
+    __tablename__ = "spent_ballot_nullifier"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "election_id",
+            "nullifier_hash",
+            name="uq_spent_nullifier_election_hash",
+        ),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    election_id = db.Column(
+        db.Integer,
+        db.ForeignKey("election.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    nullifier_hash = db.Column(db.String(64), nullable=False)
+    spent_at = db.Column(db.DateTime, nullable=False, default=utcnow_naive)
+
+
+class ResultSigningPublicKey(db.Model):
+    """Immutable local result-signing public-key archive by fingerprint."""
+
+    __tablename__ = "result_signing_public_key"
+    key_id = db.Column(db.String(64), primary_key=True)
+    algorithm = db.Column(db.String(64), nullable=False)
+    public_key_pem = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow_naive)
+
+
+@event.listens_for(ResultSigningPublicKey, "before_update")
+@event.listens_for(ResultSigningPublicKey, "before_delete")
+def _prevent_result_key_archive_mutation(mapper, connection, target):
+    raise ValueError("Archived result-signing public keys are immutable")
+
+
+class SignedElectionResult(db.Model):
+    """Durable, election-scoped signed result projection."""
+
+    __tablename__ = "signed_election_result"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "election_id",
+            name="uq_signed_election_result_election",
+        ),
+    )
+    id = db.Column(db.Integer, primary_key=True)
+    election_id = db.Column(
+        db.Integer,
+        db.ForeignKey("election.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    payload = db.Column(db.Text, nullable=False)
+    signature = db.Column(db.Text, nullable=False)
+    signer_backend = db.Column(db.String(32), nullable=False)
+    signature_algorithm = db.Column(db.String(64), nullable=False)
+    signing_key_id = db.Column(db.String(255), nullable=False)
+    signing_key_version = db.Column(db.Integer, nullable=True)
+    signed_at = db.Column(db.DateTime, nullable=False, default=utcnow_naive)
+    signed_by = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    election = db.relationship("Election")
+
+
+@event.listens_for(SignedElectionResult, "before_update")
+@event.listens_for(SignedElectionResult, "before_delete")
+def _prevent_signed_result_mutation(mapper, connection, target):
+    raise ValueError("Persisted signed election results are immutable")
+
+
+class OtpChallenge(db.Model):
+    """Server-side, replay-resistant OTP verification state."""
+
+    __tablename__ = "otp_challenge"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "user_id",
+            "purpose",
+            name="uq_otp_challenge_user_purpose",
+        ),
+        db.CheckConstraint(
+            "failed_attempts >= 0 AND failed_attempts <= 5",
+            name="ck_otp_challenge_failed_attempts",
+        ),
+    )
+    id = db.Column(db.String(64), primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    purpose = db.Column(db.String(32), nullable=False)
+    code_digest = db.Column(db.String(64), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    failed_attempts = db.Column(db.Integer, nullable=False, default=0)
+    consumed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow_naive)
 
 
 @login_manager.user_loader

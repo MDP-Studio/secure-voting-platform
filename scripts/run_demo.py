@@ -2,13 +2,16 @@ import os
 import sys
 import shutil
 from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 
-from app import create_app
-from app.init_db import init_database
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Load .env first so MAIL_* and other settings are available
 load_dotenv()
+
+from app import create_app  # noqa: E402  # agent-quality: allow: load env before app config
+from app.init_db import init_database  # noqa: E402  # agent-quality: allow: same import order
 
 DB_DIR = "instance"
 DB_PATH = os.path.join(DB_DIR, "app.db")
@@ -67,6 +70,9 @@ def ask_should_reset() -> bool:
 
 
 def main():
+    # This entry point is explicitly for a local demonstration and is the only
+    # normal path allowed to create the predictable demo identities.
+    os.environ["ALLOW_DEMO_SEED"] = "true"
     ensure_instance_dir()
 
     # Optional: Reset DB if requested
@@ -93,8 +99,8 @@ def main():
         print(f"❌ Database initialization FAILED: {e}")
         sys.exit(1)
 
-    # Print mail debug info
-    print("📧 MAIL USER:", os.environ.get("MAIL_USERNAME"))
+    # Report readiness without printing the configured account identity.
+    print("Email delivery configured:", bool(os.environ.get("MAIL_USERNAME")))
 
     # Launch Flask server
     port = int(os.environ.get("PORT", 5000))

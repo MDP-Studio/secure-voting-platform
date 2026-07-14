@@ -31,9 +31,9 @@
         <h2>Secure Online Voting</h2>
         <p>Cast your ballot safely from anywhere. Your identity is verified and your vote remains anonymous.</p>
         <ul class="sv-trust-list">
-          <li><i class="fas fa-shield-alt"></i><span>Anonymous ballots — votes cannot be traced to voters</span></li>
+          <li><i class="fas fa-shield-alt"></i><span>Identity-separated blind ballots with no stored voter-to-choice link</span></li>
           <li><i class="fas fa-user-shield"></i><span>Two-factor authentication supported</span></li>
-          <li><i class="fas fa-lock"></i><span>PII encrypted at rest with ChaCha20-Poly1305</span></li>
+          <li><i class="fas fa-lock"></i><span>Driver licence and electoral-roll contact fields encrypted at rest</span></li>
           <li><i class="fas fa-file-signature"></i><span>Results cryptographically signed via Vault</span></li>
           <li><i class="fas fa-globe"></i><span>WAF-protected with OWASP ModSecurity</span></li>
         </ul>
@@ -78,6 +78,9 @@
             <div class="text-end mt-1">
               <a href="{{ url_for('password_reset.forgot_password') }}" class="text-decoration-none" style="font-size:.8rem">Forgot password?</a>
             </div>
+            <div class="text-end mt-1">
+              <a href="{{ url_for('registration.resend_verification') }}" class="text-decoration-none" style="font-size:.8rem">Resend verification</a>
+            </div>
           </div>
 
           {% if config.get('CF_TURNSTILE_SITEKEY') %}
@@ -92,14 +95,14 @@
 
           <div class="sv-divider">or</div>
 
-          <a href="{{ url_for('registration.register') }}" class="btn btn-outline-primary w-100">
+          <a href="{{ url_for('auth.register') }}" class="btn btn-outline-primary w-100">
             <i class="fas fa-user-plus me-1"></i> Register as a Voter
           </a>
         </form>
 
         <div class="sv-security-note">
           <i class="fas fa-info-circle me-1"></i>
-          Your credentials are transmitted securely using TLS encryption. They cannot be intercepted by election staff, administrators, or third parties.
+          Hosted deployments require TLS. Election staff cannot retrieve your password, but endpoint and infrastructure security remain part of the threat model.
         </div>
       </div>
     </div>

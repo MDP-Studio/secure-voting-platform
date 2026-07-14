@@ -11,7 +11,7 @@
  *   4. Server blind-signs and returns blind_signature
  *   5. Voter unblinds: sig = blind_sig * r^(-1) mod n
  *   6. After random delay, voter submits ballot + sig to /vote/cast
- *      with credentials:'omit' (NO cookies — fully anonymous)
+ *      with credentials:'omit' (no cookies or authenticated session)
  */
 
 'use strict';
@@ -119,9 +119,15 @@ async function castBlindVote(candidateId, electionId, statusEl) {
 
     // 3. Fetch public key
     statusEl.textContent = 'Fetching signing key...';
-    const keyResp = await fetch('/vote/blind-key');
+    const keyResp = await fetch(
+      `/vote/blind-key?election_id=${encodeURIComponent(electionId)}`,
+      { credentials: 'omit' }
+    );
     if (!keyResp.ok) throw new Error('Failed to fetch signing key');
     const keyData = await keyResp.json();
+    if (Number(keyData.election_id) !== Number(electionId)) {
+      throw new Error('Signing key does not match the selected election');
+    }
     const n = BigInt(keyData.n);
     const e = BigInt(keyData.e);
 
@@ -136,22 +142,19 @@ async function castBlindVote(candidateId, electionId, statusEl) {
     // 6. Blind the ballot: blinded = m * r^e mod n
     const blinded = (m * rE) % n;
 
-    // 7. Compute nonce hash for replay prevention
-    const nonceHashBuf = await crypto.subtle.digest(
-      'SHA-256', new TextEncoder().encode(nonce)
-    );
-    const nonceHash = Array.from(new Uint8Array(nonceHashBuf),
-      b => b.toString(16).padStart(2, '0')).join('');
-
-    // 8. Request blind signature (authenticated)
+    // 7. Request blind signature (authenticated). No ballot-derived value is
+    // sent beside the identity-side authorization record.
     statusEl.textContent = 'Requesting blind signature...';
     const tokenResp = await fetch('/vote/request-token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]').content
+      },
       credentials: 'same-origin', // Send session cookie
       body: JSON.stringify({
         blinded_ballot: bigIntToHex(blinded),
-        nonce_hash: nonceHash
+        election_id: electionId
       })
     });
 
@@ -163,12 +166,12 @@ async function castBlindVote(candidateId, electionId, statusEl) {
     const tokenData = await tokenResp.json();
     const blindSig = BigInt(tokenData.blind_signature);
 
-    // 9. Unblind the signature: sig = blind_sig * r^(-1) mod n
+    // 8. Unblind the signature: sig = blind_sig * r^(-1) mod n
     statusEl.textContent = 'Unblinding signature...';
     const rInv = modInverse(r, n);
     const signature = (blindSig * rInv) % n;
 
-    // 10. Random delay (5-30 seconds) to defeat timing correlation
+    // 9. Random delay (5-30 seconds) to reduce basic timing correlation.
     const delayMs = 5000 + (crypto.getRandomValues(new Uint16Array(1))[0] % 25000);
     const delaySec = Math.ceil(delayMs / 1000);
     for (let i = delaySec; i > 0; i--) {
@@ -176,12 +179,12 @@ async function castBlindVote(candidateId, electionId, statusEl) {
       await new Promise(r => setTimeout(r, 1000));
     }
 
-    // 11. Cast ballot anonymously (NO cookies, NO session)
+    // 10. Cast ballot anonymously (NO cookies, NO session)
     statusEl.textContent = 'Casting anonymous ballot...';
     const castResp = await fetch('/vote/cast', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'omit', // NO cookies — fully anonymous
+      credentials: 'omit', // No cookies or authenticated session
       body: JSON.stringify({
         ballot: ballotHex,
         signature: bigIntToHex(signature)
@@ -195,9 +198,6 @@ async function castBlindVote(candidateId, electionId, statusEl) {
 
     statusEl.textContent = 'Vote cast successfully! Your ballot is anonymous.';
     statusEl.className = 'alert alert-success mt-3';
-
-    // Reload after 2 seconds to show updated dashboard
-    setTimeout(() => window.location.reload(), 2000);
 
   } catch (err) {
     statusEl.textContent = 'Error: ' + err.message;

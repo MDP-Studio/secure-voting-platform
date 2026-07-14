@@ -9,20 +9,58 @@ on:
 env:
   DEPLOYMENT_ENV: testing
   FLASK_ENV: testing
-  SECRET_KEY: test-secret-key-ci
+  SECRET_KEY: test-secret-key-ci-32-bytes-minimum
   GEO_FILTER_ENABLED: "False"
   ENABLE_MFA: "False"
+  PUBLIC_BASE_URL: "http://localhost"
+  TRUSTED_HOSTS: "localhost,127.0.0.1"
+  MAIL_SERVER: "smtp.example.invalid"
+  MAIL_PORT: "587"
+  MAIL_USE_TLS: "true"
+  MAIL_USE_SSL: "false"
+  MAIL_USERNAME: "ci-mail@example.invalid"
+  MAIL_PASSWORD: "ci-mail-password-not-a-secret"
+  MAIL_DEFAULT_SENDER: "ci-mail@example.invalid"
+  VOTER_PII_KEY_BASE64: "SdJcGfF7m2Kly1lpi/53LOineNBCJz9FFiJWM4GNUDg="
+  LICENSE_HASH_PEPPER: "ci-only-license-hash-pepper-at-least-32-bytes"
+  AUDIT_HMAC_KEY: "ci-only-audit-hmac-key-at-least-32-bytes"
+  DATABASE_URL: "mysql+pymysql://votinguser:ci-app-password-2026@127.0.0.1:3306/votingdb"
+  MYSQL_ROOT_PASSWORD: "ci-root-password-2026"
+  MYSQL_DATABASE: "votingdb"
+  MYSQL_USER: "votinguser"
+  MYSQL_PASSWORD: "ci-app-password-2026"
+  VOTING_ADMIN_USER: "ci_voting_admin"
+  VOTING_ADMIN_PASS: "ci-admin-bind-password"
+  VOTING_VOTER_USER: "ci_voting_voter"
+  VOTING_VOTER_PASS: "ci-voter-bind-password"
+  DB_HOST: "127.0.0.1"
+  MYSQL_PERMISSION_TEST: "1"
 
 jobs:
-  test:
+  legacy-mysql-migration:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password-2026
+          MYSQL_DATABASE: votingdb
+          MYSQL_USER: votinguser
+          MYSQL_PASSWORD: ci-app-password-2026
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -pci-root-password-2026"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -33,8 +71,86 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      - name: Upgrade populated legacy schema
+        env:
+          MYSQL_LEGACY_MIGRATION_TEST: "1"
+        run: python -m pytest tests/integration/test_mysql_legacy_migration.py -v --tb=short
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password-2026
+          MYSQL_DATABASE: votingdb
+          MYSQL_USER: votinguser
+          MYSQL_PASSWORD: ci-app-password-2026
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -pci-root-password-2026"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Create and migrate schema
+        run: python -m flask --app app.wsgi:app db upgrade
+
+      - name: Provision least-privilege application users
+        run: python scripts/init_db_users.py
+
+      - name: Run split-bind Flask MySQL integration
+        env:
+          MYSQL_FLASK_INTEGRATION_TEST: "1"
+        run: python -m pytest tests/integration/test_mysql_flask_split_binds.py -v --tb=short
+
       - name: Run all tests
-        run: python -m pytest tests/ -v --tb=short
+        run: >-
+          python -m pytest tests/ -v --tb=short
+          --ignore=tests/integration/test_mysql_flask_split_binds.py
+
+      - name: Validate Docker Compose configuration
+        env:
+          MYSQL_USER: votinguser
+          MYSQL_PASSWORD: ci-app-password-2026
+          VAULT_DEV_ROOT_TOKEN: ci-vault-test-token
+          BOOTSTRAP_MANAGER_USERNAME: ci-bootstrap-manager
+          BOOTSTRAP_MANAGER_EMAIL: ci-bootstrap-manager@example.invalid
+          BOOTSTRAP_MANAGER_PASSWORD: Ci-Bootstrap-Manager-Password!2026
+          BOOTSTRAP_MANAGER_LICENSE: CI-BOOTSTRAP-LICENSE
+          BOOTSTRAP_MANAGER_LICENSE_STATE: VIC
+        run: docker compose config --quiet
+
+      - name: Build application container
+        run: docker build --file app/Dockerfile --tag securevote:ci .
+
+      - name: Validate Vault bootstrap shell syntax
+        run: sh -n scripts/vault-init.sh
+
+      - name: Audit dependencies
+        run: |
+          python -m pip_audit -r requirements.txt
+          python -m pip_audit -r requirements-dev.txt
+
+      - name: Run high-confidence security scan
+        run: python -m bandit -r app -q -lll -iii
 
       - name: Summary
         if: always()

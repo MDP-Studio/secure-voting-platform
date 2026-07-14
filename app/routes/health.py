@@ -1,37 +1,31 @@
-"""
-Health check routes for monitoring and load balancer checks.
-"""
-import logging
+"""Minimal health endpoints for monitors and load balancers."""
 
-from flask import Blueprint, jsonify, current_app
+from flask import Blueprint, current_app, jsonify
+
 from app import db
+
 
 health = Blueprint('health', __name__, url_prefix='/health')
 
+
 @health.route('/healthz')
 def healthz():
-    """Basic health check endpoint for load balancers and monitoring."""
-    return jsonify(status="ok")
+    """Return process health without runtime configuration details."""
+    return jsonify(status='ok')
+
 
 @health.route('/ready')
 def readiness():
-    """Readiness probe - checks if the application is ready to serve requests."""
+    """Check database readiness without returning internal diagnostics."""
     try:
-        # Check database connectivity
         db.session.execute(db.text('SELECT 1'))
-        testing_mode = current_app.config.get('TESTING', False)
-        mode_str = "🧪 TESTING" if testing_mode else "🔒 PRODUCTION"
-        return jsonify(
-            status="ready", 
-            database="connected",
-            mode=mode_str,
-            testing=testing_mode
-        )
-    except Exception as e:
-        logging.getLogger(__name__).debug("Handled exception in app/routes/health.py", exc_info=True)
-        return jsonify(status="not ready", database="disconnected", error=str(e)), 503
+        return jsonify(status='ready', database='connected')
+    except Exception:
+        current_app.logger.exception('Readiness database probe failed')
+        return jsonify(status='not ready', database='disconnected'), 503
+
 
 @health.route('/live')
 def liveness():
-    """Liveness probe - checks if the application is running."""
-    return jsonify(status="alive")
+    """Return process liveness."""
+    return jsonify(status='alive')

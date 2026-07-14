@@ -1,11 +1,18 @@
 import logging
-from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
-from flask_login import current_user
+from flask import (
+    Blueprint,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from app import db, mail
-from app.models import User, Role
-from app.security.password_validator import validate_password_strength, PasswordValidationError
+from app.models import User
 from flask_mail import Message
+from app.utils.public_url import public_url_for
 
 registration = Blueprint('registration', __name__)
 
@@ -21,7 +28,7 @@ def send_verification_email(user):
     """Send an email verification link to the user."""
     s = _get_serializer()
     token = s.dumps(user.email)
-    verify_url = url_for('registration.verify_email', token=token, _external=True)
+    verify_url = public_url_for('registration.verify_email', token=token)
 
     try:
         msg = Message(
@@ -42,71 +49,6 @@ def send_verification_email(user):
         return False
 
 
-@registration.route('/register', methods=['GET', 'POST'])
-def register():
-    if current_user.is_authenticated:
-        return redirect(url_for('main.dashboard'))
-
-    if request.method == 'POST':
-        username = request.form.get('username')
-        email = request.form.get('email')
-        password = request.form.get('password')
-
-        # Basic validation
-        if not username or not email or not password:
-            flash('All fields are required', 'error')
-            return redirect(url_for('registration.register'))
-
-        # Validate password strength
-        is_valid, error_message = validate_password_strength(password)
-        if not is_valid:
-            flash(f'Password validation failed: {error_message}', 'error')
-            return redirect(url_for('registration.register'))
-
-        # check if username/email already exists
-        if User.query.filter_by(username=username).first():
-            flash('Username already taken', 'error')
-            return redirect(url_for('registration.register'))
-        if User.query.filter_by(email=email).first():
-            flash('Email already registered', 'error')
-            return redirect(url_for('registration.register'))
-
-        # assign default role = voter
-        voter_role = Role.query.filter_by(name="voter").first()
-        if not voter_role:
-            flash("Voter role not found in the system. Please seed roles first.", 'error')
-            return redirect(url_for('registration.register'))
-
-        # create user
-        try:
-            user = User()
-            user.username = username
-            user.email = email
-            user.role_id = voter_role.id
-            user.set_password(password)
-
-            db.session.add(user)
-            db.session.commit()
-
-            # Send verification email
-            send_verification_email(user)
-
-            flash("Registration successful! Please check your email to verify your account, then wait for admin approval.", 'success')
-            return redirect(url_for('auth.login'))
-        except PasswordValidationError as e:
-            logging.getLogger(__name__).debug("Handled exception in app/routes/registration.py", exc_info=True)
-            flash(f'Password validation failed: {str(e)}', 'error')
-            db.session.rollback()
-            return redirect(url_for('registration.register'))
-        except Exception as e:
-            logging.getLogger(__name__).debug("Handled exception in app/routes/registration.py", exc_info=True)
-            flash(f'Registration failed: {str(e)}', 'error')
-            db.session.rollback()
-            return redirect(url_for('registration.register'))
-
-    return render_template('register.html')
-
-
 @registration.route('/verify-email/<token>')
 def verify_email(token):
     """Verify the user's email address via a signed token."""
@@ -116,7 +58,10 @@ def verify_email(token):
         email = s.loads(token, max_age=VERIFY_TOKEN_MAX_AGE)
     except SignatureExpired:
         logging.getLogger(__name__).debug("Handled exception in app/routes/registration.py", exc_info=True)
-        flash('Verification link has expired. Please register again.', 'error')
+        flash(
+            'Verification link has expired. Please request a new link.',
+            'error',
+        )
         return redirect(url_for('auth.login'))
     except BadSignature:
         logging.getLogger(__name__).debug("Handled exception in app/routes/registration.py", exc_info=True)
@@ -137,3 +82,25 @@ def verify_email(token):
 
     flash('Email verified successfully! Your account is pending admin approval.', 'success')
     return redirect(url_for('auth.login'))
+
+
+@registration.route('/resend-verification', methods=['GET', 'POST'])
+def resend_verification():
+    """Resend an ownership challenge without disclosing account existence."""
+    if request.method == 'POST':
+        email = (request.form.get('email') or '').strip().lower()
+        if email:
+            user = User.query.filter_by(
+                email=email,
+                email_verified=False,
+                account_status='pending',
+            ).first()
+            if user is not None:
+                send_verification_email(user)
+        flash(
+            'If a pending unverified account exists for that address, a new '
+            'verification link has been sent.',
+            'success',
+        )
+        return redirect(url_for('auth.login'))
+    return render_template('resend_verification.html')

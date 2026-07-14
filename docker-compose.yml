@@ -1,39 +1,63 @@
 services:
   web:
-    build: ./app
+    build:
+      context: .
+      dockerfile: app/Dockerfile
     container_name: voting_web
     # Port 8000 is internal only — all external traffic must go through the WAF.
     # For local debugging without WAF, use: docker-compose exec web curl localhost:8000
     expose:
       - "8000"
     environment:
-      VOTING_ADMIN_USER: ${VOTING_ADMIN_USER:-voting_admin}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      DEPLOYMENT_ENV: ${DEPLOYMENT_ENV:-local-demo}
+      VOTING_ADMIN_USER: ${VOTING_ADMIN_USER:?Set VOTING_ADMIN_USER in .env}
       VOTING_ADMIN_PASS: ${VOTING_ADMIN_PASS:?Set VOTING_ADMIN_PASS in .env}
-      VOTING_VOTER_USER: ${VOTING_VOTER_USER:-voting_voter}
+      VOTING_VOTER_USER: ${VOTING_VOTER_USER:?Set VOTING_VOTER_USER in .env}
       VOTING_VOTER_PASS: ${VOTING_VOTER_PASS:?Set VOTING_VOTER_PASS in .env}
-      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-votinguser}:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}@db:3306/${MYSQL_DATABASE:-votingdb}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      # The primary runtime engine is deliberately the voter account. Schema
+      # and account credentials exist only in the one-shot db-init service.
+      MYSQL_USER: ${VOTING_VOTER_USER:?Set VOTING_VOTER_USER in .env}
+      MYSQL_PASSWORD: ${VOTING_VOTER_PASS:?Set VOTING_VOTER_PASS in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-votingdb}
+      DB_HOST: db
+      DB_PORT: 3306
+      ALLOW_DEMO_SEED: "false"
+      CREATE_TEST_VOTERS: "false"
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1}
       DEBUG_DB_BIND: ${DEBUG_DB_BIND:-false}
       GEO_FILTER_ENABLED: ${GEO_FILTER_ENABLED:-True}
       GEOIP_DB_PATH: /data/GeoLite2-Country.mmdb
       VOTER_PII_KEY_BASE64: ${VOTER_PII_KEY_BASE64:?Set VOTER_PII_KEY_BASE64 in .env}
       LICENSE_HASH_PEPPER: ${LICENSE_HASH_PEPPER:?Set LICENSE_HASH_PEPPER in .env}
-      AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:-}
+      AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:?Set AUDIT_HMAC_KEY in .env}
+      ENABLE_MFA: ${ENABLE_MFA:-false}
+      MAIL_SERVER: ${MAIL_SERVER:?Set MAIL_SERVER in .env}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USE_TLS: ${MAIL_USE_TLS:-true}
+      MAIL_USE_SSL: ${MAIL_USE_SSL:-false}
+      MAIL_USERNAME: ${MAIL_USERNAME:?Set MAIL_USERNAME in .env}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?Set MAIL_PASSWORD in .env}
+      MAIL_DEFAULT_SENDER: ${MAIL_DEFAULT_SENDER:?Set MAIL_DEFAULT_SENDER in .env}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      VAULT_ADDR: "http://vault:8200"
-      VAULT_TOKEN: ${VAULT_TOKEN:-vault-dev-token}
-      VAULT_MOUNT: "transit"
-      VAULT_KV_MOUNT: "kv"
-      VAULT_TRANSIT_KEY: "results-signing"
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN_FILE: /run/vault/token
+      VAULT_CLUSTER_ID: ${VAULT_CLUSTER_ID:-securevote-dev}
+      VAULT_NAMESPACE: ${VAULT_NAMESPACE:-}
+      VAULT_MOUNT: ${VAULT_MOUNT:-transit}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-kv}
+      VAULT_TRANSIT_KEY: ${VAULT_TRANSIT_KEY:-results-signing}
     volumes:
       - ./data:/data
-      - ./instance:/instance
-      - ./scripts:/scripts:ro
+      - ./instance:/workspace/instance
+      - vault_auth:/run/vault:ro
     depends_on:
-      db:
-        condition: service_healthy
-      vault:
-        condition: service_started
+      db-init:
+        condition: service_completed_successfully
+      vault-init:
+        condition: service_completed_successfully
     networks:
       - app_net
       - db_net
@@ -44,6 +68,101 @@ services:
         max-size: "10m"
         max-file: "5"
         tag: "{{.Name}}|{{.ImageName}}|{{.ID}}"
+
+  db-init:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    environment:
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      DEPLOYMENT_ENV: ${DEPLOYMENT_ENV:-local-demo}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_USER: ${MYSQL_USER:-votinguser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-votingdb}
+      VOTING_ADMIN_USER: ${VOTING_ADMIN_USER:?Set VOTING_ADMIN_USER in .env}
+      VOTING_ADMIN_PASS: ${VOTING_ADMIN_PASS:?Set VOTING_ADMIN_PASS in .env}
+      VOTING_VOTER_USER: ${VOTING_VOTER_USER:?Set VOTING_VOTER_USER in .env}
+      VOTING_VOTER_PASS: ${VOTING_VOTER_PASS:?Set VOTING_VOTER_PASS in .env}
+      DB_HOST: db
+      DB_PORT: 3306
+      VOTER_PII_KEY_BASE64: ${VOTER_PII_KEY_BASE64:?Set VOTER_PII_KEY_BASE64 in .env}
+      LICENSE_HASH_PEPPER: ${LICENSE_HASH_PEPPER:?Set LICENSE_HASH_PEPPER in .env}
+      AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:?Set AUDIT_HMAC_KEY in .env}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1}
+      MAIL_SERVER: ${MAIL_SERVER:?Set MAIL_SERVER in .env}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USE_TLS: ${MAIL_USE_TLS:-true}
+      MAIL_USE_SSL: ${MAIL_USE_SSL:-false}
+      MAIL_USERNAME: ${MAIL_USERNAME:?Set MAIL_USERNAME in .env}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?Set MAIL_PASSWORD in .env}
+      MAIL_DEFAULT_SENDER: ${MAIL_DEFAULT_SENDER:?Set MAIL_DEFAULT_SENDER in .env}
+      ENABLE_MFA: ${ENABLE_MFA:-false}
+      BOOTSTRAP_MANAGER_USERNAME: ${BOOTSTRAP_MANAGER_USERNAME:?Set BOOTSTRAP_MANAGER_USERNAME in .env}
+      BOOTSTRAP_MANAGER_EMAIL: ${BOOTSTRAP_MANAGER_EMAIL:?Set BOOTSTRAP_MANAGER_EMAIL in .env}
+      BOOTSTRAP_MANAGER_PASSWORD: ${BOOTSTRAP_MANAGER_PASSWORD:?Set BOOTSTRAP_MANAGER_PASSWORD in .env}
+      BOOTSTRAP_MANAGER_LICENSE: ${BOOTSTRAP_MANAGER_LICENSE:?Set BOOTSTRAP_MANAGER_LICENSE in .env}
+      BOOTSTRAP_MANAGER_LICENSE_STATE: ${BOOTSTRAP_MANAGER_LICENSE_STATE:?Set BOOTSTRAP_MANAGER_LICENSE_STATE in .env}
+      ALLOW_DEMO_SEED: "false"
+      CREATE_TEST_VOTERS: "false"
+    command:
+      - sh
+      - -c
+      - >-
+        python -m flask --app app.wsgi:app db upgrade &&
+        python scripts/bootstrap_reference_data.py &&
+        python scripts/bootstrap_manager.py &&
+        python scripts/anchor_open_election_keys.py &&
+        python scripts/init_db_users.py
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - db_net
+    volumes:
+      - ./instance:/workspace/instance
+    restart: "no"
+
+  migration-runner:
+    profiles: ["maintenance"]
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    environment:
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      DEPLOYMENT_ENV: ${DEPLOYMENT_ENV:-local-demo}
+      MYSQL_USER: ${MYSQL_USER:-votinguser}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-votingdb}
+      VOTING_ADMIN_USER: ${VOTING_ADMIN_USER:?Set VOTING_ADMIN_USER in .env}
+      VOTING_ADMIN_PASS: ${VOTING_ADMIN_PASS:?Set VOTING_ADMIN_PASS in .env}
+      VOTING_VOTER_USER: ${VOTING_VOTER_USER:?Set VOTING_VOTER_USER in .env}
+      VOTING_VOTER_PASS: ${VOTING_VOTER_PASS:?Set VOTING_VOTER_PASS in .env}
+      DB_HOST: db
+      DB_PORT: 3306
+      VOTER_PII_KEY_BASE64: ${VOTER_PII_KEY_BASE64:?Set VOTER_PII_KEY_BASE64 in .env}
+      LICENSE_HASH_PEPPER: ${LICENSE_HASH_PEPPER:?Set LICENSE_HASH_PEPPER in .env}
+      AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:?Set AUDIT_HMAC_KEY in .env}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1}
+      ENABLE_MFA: ${ENABLE_MFA:-false}
+      MAIL_SERVER: ${MAIL_SERVER:?Set MAIL_SERVER in .env}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USE_TLS: ${MAIL_USE_TLS:-true}
+      MAIL_USE_SSL: ${MAIL_USE_SSL:-false}
+      MAIL_USERNAME: ${MAIL_USERNAME:?Set MAIL_USERNAME in .env}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?Set MAIL_PASSWORD in .env}
+      MAIL_DEFAULT_SENDER: ${MAIL_DEFAULT_SENDER:?Set MAIL_DEFAULT_SENDER in .env}
+    command: ["python", "-m", "flask", "--app", "app.wsgi:app", "db", "upgrade"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - db_net
+    volumes:
+      - ./instance:/workspace/instance
+    restart: "no"
 
   waf:
     image: owasp/modsecurity-crs:nginx
@@ -65,7 +184,7 @@ services:
         tag: "{{.Name}}|{{.ImageName}}|{{.ID}}"
 
   db:
-    image: mysql:8.0
+    image: mysql:8.4
     platform: linux/amd64
     container_name: voting_db
     environment:
@@ -73,7 +192,6 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-votingdb}
       MYSQL_USER: ${MYSQL_USER:-votinguser}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
-      MYSQL_DEFAULT_AUTHENTICATION_PLUGIN: caching_sha2_password
     volumes:
       - db_data:/var/lib/mysql
       # keep slow query logs on a host path
@@ -98,10 +216,8 @@ services:
   vault:
     image: hashicorp/vault:latest
     container_name: voting_vault
-    ports:
-      - "8200:8200"
     environment:
-      VAULT_DEV_ROOT_TOKEN_ID: "vault-dev-token"
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN:?Set VAULT_DEV_ROOT_TOKEN in .env}
       VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
       VAULT_ADDR: "http://0.0.0.0:8200"
     cap_add:
@@ -109,7 +225,17 @@ services:
     volumes:
       - vault_data:/vault/data
       - ./scripts/vault-init.sh:/vault-init.sh:ro
-    command: ["vault", "server", "-dev", "-dev-root-token-id=vault-dev-token", "-dev-listen-address=0.0.0.0:8200"]
+    command:
+      - vault
+      - server
+      - -dev
+      - -dev-root-token-id=${VAULT_DEV_ROOT_TOKEN:?Set VAULT_DEV_ROOT_TOKEN in .env}
+      - -dev-listen-address=0.0.0.0:8200
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     networks:
       - app_net
     restart: unless-stopped
@@ -120,9 +246,30 @@ services:
         max-file: "5"
         tag: "{{.Name}}|{{.ImageName}}|{{.ID}}"
 
+  vault-init:
+    image: hashicorp/vault:latest
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN:?Set VAULT_DEV_ROOT_TOKEN in .env}
+      VAULT_MOUNT: ${VAULT_MOUNT:-transit}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-kv}
+      VAULT_TRANSIT_KEY: ${VAULT_TRANSIT_KEY:-results-signing}
+      VAULT_TOKEN_OUTPUT: /run/vault/token
+    volumes:
+      - ./scripts/vault-init.sh:/vault-init.sh:ro
+      - vault_auth:/run/vault
+    entrypoint: ["/bin/sh", "/vault-init.sh"]
+    depends_on:
+      vault:
+        condition: service_healthy
+    networks:
+      - app_net
+    restart: "no"
+
 volumes:
   db_data:
   vault_data:
+  vault_auth:
 
 networks:
   app_net:

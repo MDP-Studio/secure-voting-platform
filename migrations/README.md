@@ -1,18 +1,49 @@
-This project includes a minimal Alembic scaffold and a migration to add a UNIQUE constraint on the `vote.user_id` column.
+# Database migrations
 
-How to run migrations (dev):
+SecureVote uses Flask-Migrate/Alembic against the shared election schema. The
+admin and voter bindings are separate credentials for that same schema, so run
+each migration once through the primary `DATABASE_URL`.
 
-1. Install alembic in your environment:
+```powershell
+python -m flask --app app.wsgi:app db upgrade
+```
 
-   pip install alembic
+The migration chain supports both a fresh empty database and the legacy 2025
+schema stamped at `20251005_add_uq_vote_user`.
 
-2. Set the SQLALCHEMY URL in `migrations/alembic.ini` or export as an env var:
+CI applies the legacy fixture to a live MySQL 8.4 service as well as exercising
+fresh and populated SQLite migration paths. These migrations are forward-only:
+after a successful upgrade, retain the upgraded schema if application code is
+rolled back. If MySQL stops after partial DDL, restore the pre-upgrade backup
+before correcting the failure and retrying.
 
-   export DATABASE_URL=sqlite:///instance/app.db
+The 2026 migration preserves legacy candidates and ballots, removes the
+identity-bearing `vote.user_id`, creates election-scoped receipts and anonymous
+nullifiers, invalidates legacy nonce-linked blind authorizations, and adds OTP
+and durable result-signing tables. SQLite preservation is covered by an
+automated migration test, so deleting a development database is not required.
 
-3. Run the migration:
+Before removing linkable legacy blind-token rows, the migration records
+`blind_key_recovery_required` on every open election when any authorization
+history exists. This durable quarantine prevents the absence of migrated token
+rows from being misread as proof that no authorization was ever issued.
 
-   alembic -c migrations/alembic.ini upgrade head
+Before upgrading a populated database:
 
-Notes:
-- SQLite does not support altering table constraints in-place easily. If you use SQLite for development, the simplest path is to recreate the DB (delete `instance/app.db` and rerun the app's init script) which will pick up the new model constraint when the DB is re-created. For production databases (Postgres/MySQL) the Alembic migration above will add the constraint.
+1. Stop ballot traffic.
+2. Back up the database and the `instance/` key directory.
+3. Run the migration command.
+4. Run `python scripts/anchor_open_election_keys.py`. It validates existing
+   anchors and provisions only an unanchored open election with no issued blind
+   authorizations.
+5. Verify `alembic_version`, database grants, and readiness before traffic.
+
+Never generate a replacement key for an election that already has an anchored
+fingerprint. Restore its original instance key directory instead.
+
+If an open election has issued authorizations but no database anchor, the
+reconciliation script fails closed. Do not clear
+`blind_key_recovery_required` ad hoc and do not generate a replacement key.
+Close or cancel the quarantined election, reconcile outstanding voter receipts
+through the documented election-operations process, and start a new election
+with a freshly generated and anchored authority.

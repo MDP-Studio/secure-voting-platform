@@ -1,13 +1,68 @@
 import logging
-# db_utils.py
 import os
 import time
+
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL, make_url
+
+
+def _validated_database_secret(name, value):
+    """Reject missing, placeholder, or trivially weak database credentials."""
+    if (
+        not isinstance(value, str)
+        or len(value) < 16
+        or value.upper().startswith(("CHANGE_ME", "REPLACE_"))
+    ):
+        raise RuntimeError(
+            f"{name} must be an explicit non-placeholder value of at least 16 characters"
+        )
+    return value
+
+
+def get_database_url(instance_path):
+    """Return an explicit URL or safely build one from discrete MySQL fields."""
+    explicit = os.environ.get('DATABASE_URL')
+    if explicit:
+        parsed = make_url(explicit)
+        if parsed.get_backend_name() == 'mysql':
+            _validated_database_secret('DATABASE_URL password', parsed.password)
+        return explicit
+    host = os.environ.get('DB_HOST')
+    if host:
+        required = {
+            'MYSQL_USER': os.environ.get('MYSQL_USER'),
+            'MYSQL_PASSWORD': os.environ.get('MYSQL_PASSWORD'),
+            'MYSQL_DATABASE': os.environ.get('MYSQL_DATABASE'),
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            raise RuntimeError(
+                "Missing primary database configuration: " + ", ".join(missing)
+            )
+        password = _validated_database_secret(
+            'MYSQL_PASSWORD',
+            required['MYSQL_PASSWORD'],
+        )
+        return URL.create(
+            'mysql+pymysql',
+            username=required['MYSQL_USER'],
+            password=password,
+            host=host,
+            port=int(os.environ.get('DB_PORT', '3306')),
+            database=required['MYSQL_DATABASE'],
+        ).render_as_string(hide_password=False)
+    return 'sqlite:///' + os.path.join(instance_path, 'app.db')
 
 
 def wait_for_db(max_attempts=30, delay=2):
     """Wait for the database to be ready with timeout."""
-    db_url = os.environ.get('DATABASE_URL') or ('sqlite:///' + os.path.join(os.path.dirname(__file__), '..', 'instance', 'app.db'))
+    from flask import current_app, has_app_context
+
+    db_url = (
+        current_app.config['SQLALCHEMY_DATABASE_URI']
+        if has_app_context()
+        else get_database_url(os.path.join(os.path.dirname(__file__), '..', 'instance'))
+    )
     print("⏳ Waiting for database to be ready...")
     engine = create_engine(db_url)
     attempts = 0
@@ -36,22 +91,16 @@ def wait_for_db(max_attempts=30, delay=2):
 
 def _build_bind_url(base_url, user, password, db_name):
     """Build a database URL by replacing user, password, and db in base_url."""
-    from urllib.parse import urlparse, urlunparse
-    parsed = urlparse(base_url)
-    netloc_parts = parsed.netloc.split('@')
-    if len(netloc_parts) == 2:
-        host_port = netloc_parts[1]
-        netloc = f"{user}:{password}@{host_port}"
-    else:
-        # No auth in original, assume host:port
-        netloc = f"{user}:{password}@{parsed.netloc}"
-    path = f"/{db_name}"
-    return urlunparse((parsed.scheme, netloc, path, parsed.params, parsed.query, parsed.fragment))
+    return make_url(base_url).set(
+        username=user,
+        password=password,
+        database=db_name,
+    ).render_as_string(hide_password=False)
 
 
 def _build_db_binds(instance_path):
     """Build database bind URLs dynamically from DATABASE_URL and credentials."""
-    base_url = os.environ.get('DATABASE_URL') or ('sqlite:///' + os.path.join(instance_path, 'app.db'))
+    base_url = get_database_url(instance_path)
     
     # For SQLite, binds don't apply (single file), so use the same URL
     if base_url.startswith('sqlite'):
@@ -61,12 +110,34 @@ def _build_db_binds(instance_path):
         }
     
     # For other DBs, build URLs with different credentials and DB names
-    admin_user = os.environ.get('VOTING_ADMIN_USER', 'voting_admin')
-    admin_pass = os.environ.get('VOTING_ADMIN_PASS', 'adminpass')
-    voter_user = os.environ.get('VOTING_VOTER_USER', 'voting_voter')
-    voter_pass = os.environ.get('VOTING_VOTER_PASS', 'voterpass')
+    admin_user = os.environ.get('VOTING_ADMIN_USER')
+    admin_pass = os.environ.get('VOTING_ADMIN_PASS')
+    voter_user = os.environ.get('VOTING_VOTER_USER')
+    voter_pass = os.environ.get('VOTING_VOTER_PASS')
+    missing = [
+        name
+        for name, value in (
+            ('VOTING_ADMIN_USER', admin_user),
+            ('VOTING_ADMIN_PASS', admin_pass),
+            ('VOTING_VOTER_USER', voter_user),
+            ('VOTING_VOTER_PASS', voter_pass),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(
+            "Missing split-database credentials: " + ", ".join(missing)
+        )
+
+    admin_pass = _validated_database_secret('VOTING_ADMIN_PASS', admin_pass)
+    voter_pass = _validated_database_secret('VOTING_VOTER_PASS', voter_pass)
+
+    parsed = make_url(base_url)
+    db_name = os.environ.get('MYSQL_DATABASE') or parsed.database
+    if not db_name:
+        raise RuntimeError("MYSQL_DATABASE or a database name in DATABASE_URL is required")
     
     return {
-        'admin': _build_bind_url(base_url, admin_user, admin_pass, 'votingdb'),
-        'voters': _build_bind_url(base_url, voter_user, voter_pass, 'votingdb'),
+        'admin': _build_bind_url(base_url, admin_user, admin_pass, db_name),
+        'voters': _build_bind_url(base_url, voter_user, voter_pass, db_name),
     }

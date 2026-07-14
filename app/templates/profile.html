@@ -89,12 +89,12 @@
               </td>
             </tr>
             <tr>
-              <td class="text-muted" style="font-size:.8125rem; padding:.75rem 1.25rem">Has Voted</td>
+              <td class="text-muted" style="font-size:.8125rem; padding:.75rem 1.25rem">Election Participations</td>
               <td style="padding:.75rem 1.25rem">
-                {% if current_user.has_voted %}
-                  <span class="sv-badge sv-badge-success">Yes</span>
+                {% if election_participation_count %}
+                  <span class="sv-badge sv-badge-success">{{ election_participation_count }}</span>
                 {% else %}
-                  <span class="sv-badge sv-badge-neutral">Not Yet</span>
+                  <span class="sv-badge sv-badge-neutral">None Yet</span>
                 {% endif %}
               </td>
             </tr>

@@ -14,7 +14,7 @@
     <div class="col-md-8">
       <form method="GET" class="d-flex gap-2">
         <input type="text" name="search" class="form-control" 
-               placeholder="Search by name, email, roll number..." 
+               placeholder="Search by username, email, or roll number..."
                value="{{ search }}" maxlength="100">
         <select name="status" class="form-select" style="width: auto;">
           <option value="all" {{ 'selected' if status_filter == 'all' else '' }}>All Status</option>
@@ -53,7 +53,7 @@
             <th>Driver License</th>
             <th>Region</th>
             <th>Status</th>
-            <th>Has Voted</th>
+            <th>Election Participations</th>
             <th>Created</th>
             <th style="width: 120px">Actions</th>
           </tr>
@@ -107,12 +107,12 @@
               {% endif %}
             </td>
             <td>
-              {% if user.has_voted %}
+              {% if user.vote_receipts.count() %}
                 <span class="badge bg-info">
-                  <i class="fas fa-vote-yea"></i> Voted
+                  <i class="fas fa-vote-yea"></i> {{ user.vote_receipts.count() }}
                 </span>
               {% else %}
-                <span class="text-muted">Not voted</span>
+                <span class="text-muted">None</span>
               {% endif %}
             </td>
             <td>

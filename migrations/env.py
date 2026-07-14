@@ -1,5 +1,4 @@
 from __future__ import with_statement
-import logging
 import sys
 import os
 from logging.config import fileConfig
@@ -11,7 +10,7 @@ from sqlalchemy import engine_from_config, pool
 config = context.config
 
 # Setup logging from Alembic config file
-fileConfig(config.config_file_name)
+fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -38,30 +37,23 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
-    """Run migrations for the default database and all configured binds."""
+    """Run each schema migration once against the shared election database.
+
+    The admin and voters binds use different credentials for the same schema.
+    Replaying DDL once per credential would attempt to add every column three
+    times and could leave separate Alembic version tables out of sync.
+    """
     app = create_app()
     with app.app_context():
-        # Build a map of bind name -> engine
-        binds = {"default": db.get_engine(app)}
-        for bind_key in app.config.get("SQLALCHEMY_BINDS", {}).keys():
-            try:
-                binds[bind_key] = db.get_engine(app, bind=bind_key)
-            except Exception:
-                # If a bind is not reachable (e.g., not configured in dev), skip it
-                logging.getLogger(__name__).debug("Handled exception in migrations/env.py", exc_info=True)
-                continue
-
-        # Run migrations per bind with separate version tables
-        for name, engine in binds.items():
-            with engine.connect() as connection:
-                context.configure(
-                    connection=connection,
-                    target_metadata=target_metadata,
-                    version_table=("alembic_version" if name == "default" else f"alembic_version_{name}"),
-                    compare_type=True,
-                )
-                with context.begin_transaction():
-                    context.run_migrations()
+        with db.engine.connect() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                version_table="alembic_version",
+                compare_type=True,
+            )
+            with context.begin_transaction():
+                context.run_migrations()
 
 
 if context.is_offline_mode():

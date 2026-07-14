@@ -1,14 +1,41 @@
-import logging
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from base64 import b64encode, b64decode
+"""Versioned, authenticated encryption for voter PII.
+
+Runtime reads accept only the current, explicitly versioned envelope. Legacy
+values must be converted through one of the explicit migration helpers before
+the application will expose them as plaintext.
+"""
+
+from __future__ import annotations
+
+import base64
+import binascii
 import os
-from sqlalchemy.types import TypeDecorator, String
+
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from flask import current_app
-import re
+from sqlalchemy.types import String, TypeDecorator
+
+
+class PIIDecryptionError(RuntimeError):
+    """Raised when stored PII cannot be authenticated and decrypted."""
+
+
+class LegacyPIIMigrationError(ValueError):
+    """Raised when an explicitly requested legacy conversion is invalid."""
+
 
 class ChaChaEncryptionService:
+    """Encrypt and decrypt PII using a versioned ChaCha20-Poly1305 envelope."""
+
     _instance = None
     _key = None
+
+    ENVELOPE_PREFIX = "svpii:v1:"
+    LEGACY_PLAINTEXT_PREFIX = "svpii:legacy-plaintext:v0:"
+    ASSOCIATED_DATA = b"securevote:voter-pii:v1"
+    NONCE_BYTES = 12
+    TAG_BYTES = 16
 
     @classmethod
     def get_instance(cls):
@@ -18,228 +45,172 @@ class ChaChaEncryptionService:
 
     @classmethod
     def initialize(cls, key=None):
-        """Initialize encryption service with a key."""
+        """Initialize the process-wide service with one 32-byte Base64 key."""
         if key is None:
-            # Get key from environment
-            key = os.environ.get('VOTER_PII_KEY_BASE64')
+            key = os.environ.get("VOTER_PII_KEY_BASE64")
             if not key:
                 raise RuntimeError("VOTER_PII_KEY_BASE64 environment variable not set")
-        
+
         if isinstance(key, str):
-            # Decode base64 key
             try:
-                key = b64decode(key)
-            except Exception as e:
-                raise RuntimeError(f"Invalid base64 key: {e}")
-            
-        if len(key) != 32:
+                key = base64.b64decode(key, validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise RuntimeError("Invalid Base64 PII encryption key") from exc
+
+        if not isinstance(key, bytes) or len(key) != 32:
             raise RuntimeError("ChaCha20Poly1305 requires a 32-byte key")
-        
+
         cls._key = key
         cls._instance = cls()
         return cls._instance
 
     def __init__(self):
         if self._key is None:
-            raise RuntimeError("ChaChaEncryptionService not initialized. Call initialize() first.")
+            raise RuntimeError(
+                "ChaChaEncryptionService not initialized. Call initialize() first."
+            )
         self.cipher = ChaCha20Poly1305(self._key)
 
+    @classmethod
+    def _decode_payload(cls, payload: str) -> bytes:
+        """Strictly decode an AEAD payload without normalizing attacker input."""
+        if not isinstance(payload, str) or not payload:
+            raise PIIDecryptionError("Stored PII envelope has no ciphertext payload")
+        if payload != payload.strip() or len(payload) % 4 != 0:
+            raise PIIDecryptionError("Stored PII envelope has invalid Base64 framing")
+        try:
+            combined = base64.b64decode(payload, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise PIIDecryptionError(
+                "Stored PII envelope has invalid Base64 framing"
+            ) from exc
+        if len(combined) < cls.NONCE_BYTES + cls.TAG_BYTES:
+            raise PIIDecryptionError("Stored PII envelope is truncated")
+        return combined
+
+    def _decrypt_combined(self, combined: bytes, associated_data: bytes | None) -> str:
+        nonce = combined[: self.NONCE_BYTES]
+        ciphertext = combined[self.NONCE_BYTES :]
+        try:
+            plaintext = self.cipher.decrypt(nonce, ciphertext, associated_data)
+            return plaintext.decode("utf-8")
+        except (InvalidTag, UnicodeDecodeError, ValueError) as exc:
+            raise PIIDecryptionError(
+                "Stored PII failed authenticated decryption"
+            ) from exc
+
     def encrypt(self, data: str) -> str:
-        """Encrypt a string value."""
+        """Encrypt a value into the current authenticated envelope."""
         if data is None:
             return None
-            
+        if not isinstance(data, str):
+            data = str(data)
+
+        nonce = os.urandom(self.NONCE_BYTES)
         try:
-            # Validate and convert input data
-            if not isinstance(data, str):
-                data = str(data)
-            data_bytes = data.encode('utf-8')
-            
-            # Generate a random 12-byte nonce
-            nonce = os.urandom(12)
-            
-            # Encrypt the data
-            ciphertext = self.cipher.encrypt(nonce, data_bytes, None)
-            
-            # Combine nonce and ciphertext
-            combined = nonce + ciphertext
-            
-            # Perform base64 encoding and ensure proper padding
-            encoded = b64encode(combined).decode('ascii')
-            padding_needed = (4 - len(encoded) % 4) % 4  # Correct padding calculation
-            if padding_needed:
-                encoded += '=' * padding_needed
-                
-            # Validate final output
-            if len(encoded) % 4 != 0:
-                raise ValueError("Base64 encoding resulted in invalid padding")
-                
-            return encoded
-            
-        except Exception as e:
-            current_app.logger.error(f"Encryption error: {str(e)}")
-            raise RuntimeError(f"Failed to encrypt data: {str(e)}")
+            ciphertext = self.cipher.encrypt(
+                nonce,
+                data.encode("utf-8"),
+                self.ASSOCIATED_DATA,
+            )
+        except Exception as exc:
+            current_app.logger.exception("PII encryption failed")
+            raise RuntimeError("Failed to encrypt PII") from exc
+
+        payload = base64.b64encode(nonce + ciphertext).decode("ascii")
+        return f"{self.ENVELOPE_PREFIX}{payload}"
 
     def decrypt(self, encrypted_data: str) -> str:
-        """Decrypt an encrypted string value."""
+        """Decrypt current-format PII, failing closed on every invalid value."""
         if encrypted_data is None:
             return None
+        if not isinstance(encrypted_data, str):
+            raise PIIDecryptionError("Stored PII envelope must be text")
+        if not encrypted_data.startswith(self.ENVELOPE_PREFIX):
+            raise PIIDecryptionError(
+                "Stored PII has no supported version marker; run the explicit migration"
+            )
 
+        payload = encrypted_data[len(self.ENVELOPE_PREFIX) :]
+        combined = self._decode_payload(payload)
+        return self._decrypt_combined(combined, self.ASSOCIATED_DATA)
+
+    def migrate_legacy_plaintext(self, marked_value: str) -> str:
+        """Encrypt plaintext only when an operator supplied the legacy marker.
+
+        The normal decrypt path intentionally rejects this marker. A migration
+        must first mark reviewed plaintext values and then call this method.
+        """
+        if not isinstance(marked_value, str) or not marked_value.startswith(
+            self.LEGACY_PLAINTEXT_PREFIX
+        ):
+            raise LegacyPIIMigrationError(
+                "Legacy plaintext must carry the explicit legacy-plaintext marker"
+            )
+        plaintext = marked_value[len(self.LEGACY_PLAINTEXT_PREFIX) :]
+        return self.encrypt(plaintext)
+
+    def migrate_legacy_ciphertext(self, unversioned_ciphertext: str) -> str:
+        """Authenticate old unversioned ChaCha ciphertext and re-encrypt as v1.
+
+        This method is deliberately separate from runtime decryption so an
+        unversioned or tampered database value can never be mistaken for text.
+        """
+        if not isinstance(unversioned_ciphertext, str):
+            raise LegacyPIIMigrationError("Legacy ciphertext must be text")
+        if unversioned_ciphertext.startswith(self.ENVELOPE_PREFIX):
+            raise LegacyPIIMigrationError("Value is already current-format PII")
         try:
-            # Validate input and remove whitespace
-            if not isinstance(encrypted_data, str):
-                # Gracefully handle unexpected types by stringifying
-                encrypted_data = str(encrypted_data)
-            
-            s = encrypted_data.strip()
+            combined = self._decode_payload(unversioned_ciphertext)
+            plaintext = self._decrypt_combined(combined, None)
+        except PIIDecryptionError as exc:
+            raise LegacyPIIMigrationError(
+                "Legacy ciphertext failed authenticated decryption"
+            ) from exc
+        return self.encrypt(plaintext)
 
-            # Fast path: clearly too short to be a valid ChaCha20-Poly1305 payload
-            # Minimum possible: 12-byte nonce + 16-byte tag = 28 bytes -> base64 ~38 chars
-            if len(s) < 38:
-                # Assume legacy plaintext stored before migration
-                return s
-
-            # Strict Base64 validation: only valid chars, proper padding (0,1,2 '=' at end), length % 4 == 0
-            base64_re = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
-            if (len(s) % 4 != 0) or (not base64_re.match(s)):
-                # Not a valid base64 string — treat as plaintext (legacy value)
-                return s
-
-            # Decode from base64 with strict validation
-            try:
-                combined = b64decode(s, validate=True)
-            except Exception:
-                # Not valid base64 — treat as plaintext
-                logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
-                return s
-
-            # Validate combined data length (must include 12-byte nonce and at least 16-byte tag)
-            if len(combined) < 28:
-                # Invalid encrypted blob — treat as plaintext
-                return s
-            
-            # Validate combined data length
-            # (The previous check ensures at least 28 bytes, so this is just a defensive check)
-            if len(combined) < 12:
-                return s
-            
-            # Extract nonce and ciphertext
-            nonce = combined[:12]
-            ciphertext = combined[12:]
-            
-            # Validate nonce length
-            if len(nonce) != 12:
-                return s
-            
-            # Decrypt the data
-            try:
-                plaintext = self.cipher.decrypt(nonce, ciphertext, None)
-                return plaintext.decode('utf-8')
-            except Exception as e:
-                # If decryption fails, fall back to returning the original string (likely plaintext)
-                logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
-                return s
-                
-        except Exception as e:
-            # Be quiet on decryption path to avoid log spam; return original
-            logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
-            try:
-                return encrypted_data if encrypted_data is not None else None
-            except Exception:
-                logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
-                return None
 
 class EncryptedType(TypeDecorator):
-    """SQLAlchemy type for encrypted fields."""
+    """SQLAlchemy type that fails closed when stored PII is not authentic."""
+
     impl = String
     cache_ok = True
-    
+
     def __init__(self, length=None):
         super().__init__(length=length)
-        # Defer service acquisition until first use to avoid initialization order issues
-        self.service = None
         self.length = length
-        
-        # Minimum length needed for encrypted data:
-        # 12 bytes nonce + 16 bytes tag + 1 byte data = 29 bytes
-        # Base64 encoding: ceil(29 * 4/3) = 40 chars
-        self.min_length = 40
-        
-        # Validate column length
+        # prefix + Base64(12-byte nonce + 16-byte tag + one-byte plaintext)
+        self.min_length = len(ChaChaEncryptionService.ENVELOPE_PREFIX) + 40
         if length is not None and length < self.min_length:
-            raise ValueError(f"Column length must be at least {self.min_length} characters")
+            raise ValueError(
+                f"Column length must be at least {self.min_length} characters"
+            )
+
+    @staticmethod
+    def _service() -> ChaChaEncryptionService:
+        """Resolve the current process-wide key without caching stale instances."""
+        try:
+            return ChaChaEncryptionService.get_instance()
+        except RuntimeError:
+            key_b64 = os.environ.get("VOTER_PII_KEY_BASE64")
+            if not key_b64:
+                raise
+            return ChaChaEncryptionService.initialize(key_b64)
 
     def process_bind_param(self, value, dialect):
-        """Encrypt value before saving to DB."""
+        """Encrypt plaintext before saving it to the database."""
         if value is None:
             return None
-            
-        try:
-            # Ensure encryption service is initialized
-            if self.service is None:
-                try:
-                    self.service = ChaChaEncryptionService.get_instance()
-                except Exception:
-                    # Attempt lazy initialization from environment
-                    key_b64 = os.environ.get('VOTER_PII_KEY_BASE64')
-                    if key_b64:
-                        ChaChaEncryptionService.initialize(key_b64)
-                        self.service = ChaChaEncryptionService.get_instance()
-                    else:
-                        raise
-            # Convert value to string if needed
-            if not isinstance(value, str):
-                value = str(value)
-                
-            # Encrypt the value
-            encrypted = self.service.encrypt(value)
-            if encrypted is None:
-                current_app.logger.error("Encryption returned None")
-                raise ValueError("Encryption failed")
-                
-            # Validate length if specified
-            if self.length and len(encrypted) > self.length:
-                current_app.logger.error(f"Encrypted value exceeds max length: {len(encrypted)} > {self.length}")
-                raise ValueError(f"Encrypted value length ({len(encrypted)}) exceeds column length ({self.length})")
-                
-            return encrypted
-            
-        except Exception as e:
-            current_app.logger.error(f"Failed to encrypt value: {str(e)}")
-            raise
+        encrypted = self._service().encrypt(value)
+        if self.length and len(encrypted) > self.length:
+            raise ValueError(
+                f"Encrypted value length ({len(encrypted)}) exceeds column length "
+                f"({self.length})"
+            )
+        return encrypted
 
     def process_result_value(self, value, dialect):
-        """Decrypt value when loading from DB."""
+        """Authenticate and decrypt a database value without plaintext fallback."""
         if value is None:
             return None
-            
-        try:
-            # Ensure encryption service is initialized
-            if self.service is None:
-                try:
-                    self.service = ChaChaEncryptionService.get_instance()
-                except Exception:
-                    logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
-                    key_b64 = os.environ.get('VOTER_PII_KEY_BASE64')
-                    if key_b64:
-                        ChaChaEncryptionService.initialize(key_b64)
-                        self.service = ChaChaEncryptionService.get_instance()
-                    else:
-                        # If no key available, return original value (plaintext path)
-                        return value
-            # Validate input
-            if not isinstance(value, str):
-                value = str(value)
-            
-            # If value is clearly too short to be valid ciphertext, treat as plaintext (legacy)
-            if len(value) < self.min_length:
-                return value
-                
-            # Attempt decryption
-            decrypted = self.service.decrypt(value)
-            return decrypted
-            
-        except Exception as e:
-            # Return original value on any unexpected error to keep app functional
-            logging.getLogger(__name__).debug("Handled exception in app/security/encryption.py", exc_info=True)
-            return value
+        return self._service().decrypt(value)

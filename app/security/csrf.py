@@ -42,11 +42,6 @@ def _validate_csrf():
     if request.endpoint in EXEMPT_ENDPOINTS:
         return
 
-    # Skip API endpoints that use JSON content type (they're protected by
-    # same-origin policy — browsers won't send JSON cross-origin without CORS)
-    if request.content_type and 'application/json' in request.content_type:
-        return
-
     token = request.form.get(CSRF_FIELD_NAME) or request.headers.get('X-CSRF-Token')
     expected = session.get(CSRF_TOKEN_KEY)
 
@@ -74,6 +69,5 @@ def init_csrf(app):
     csrf_exempt('health.ready')
     csrf_exempt('health.live')
     csrf_exempt('auth.login_nonce')
-    csrf_exempt('otp.send_otp')  # Already requires authenticated session
     csrf_exempt('main.cast_anonymous_ballot')     # Anonymous endpoint (no cookies)
     csrf_exempt('main.blind_signing_public_key')  # Public GET

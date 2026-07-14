@@ -109,6 +109,16 @@ def init_database(app):
       - Candidates in Sydney
     All seeded users are set to `approved` to simplify local testing.
     """
+    if os.environ.get("ALLOW_DEMO_SEED", "false").lower() not in (
+        "true",
+        "1",
+        "yes",
+    ):
+        raise RuntimeError(
+            "Demo seeding is disabled. Set ALLOW_DEMO_SEED=true only for an "
+            "intentional local demonstration."
+        )
+
     with app.app_context():
         # Wait for database to be ready
         wait_for_db()
@@ -157,19 +167,19 @@ def init_database(app):
             if not admin:
                 admin = User(
                     username="admin",
-                    email="secsoftsysa3@myyahoo.com",
+                    email="admin@securevote.example.invalid",
                     driver_lic_no=make_lic("ADMIN01"),
                     driver_lic_state="VIC",
-                    has_voted=False,
                     created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     account_status="approved",
+                    email_verified=True,
                 )
                 admin.role = manager_role
                 admin.set_password("Admin@123456!")  # Meet password policy requirements
                 db.session.add(admin)
             else:
                 # ensure important fields are present/consistent
-                admin.email = "secsoftsysa3@myyahoo.com"
+                admin.email = "admin@securevote.example.invalid"
                 admin.driver_lic_no = admin.driver_lic_no or make_lic("ADMIN01")
                 admin.driver_lic_state = admin.driver_lic_state or "VIC"
                 if not admin.role:
@@ -182,12 +192,12 @@ def init_database(app):
             if not delegate1:
                 delegate1 = User(
                     username="delegate1",
-                    email="delegate1@voting.com",
+                    email="delegate1@securevote.example.invalid",
                     driver_lic_no=make_lic("DELEG01"),
                     driver_lic_state="NSW",
-                    has_voted=False,
                     created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     account_status="approved",
+                    email_verified=True,
                 )
                 delegate1.role = delegate_role
                 delegate1.set_password("Delegate@123!")
@@ -205,12 +215,12 @@ def init_database(app):
             if not voter1:
                 voter1 = User(
                     username="voter1",
-                    email="voter1@voting.com",
+                    email="voter1@securevote.example.invalid",
                     driver_lic_no=make_lic("VOTER01"),
                     driver_lic_state="NSW",
-                    has_voted=False,
                     created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     account_status="approved",
+                    email_verified=True,
                 )
                 voter1.role = voter_role
                 voter1.set_password("Password@123!")
@@ -228,12 +238,12 @@ def init_database(app):
             if not lix:
                 lix = User(
                     username="lix",
-                    email="2508027683@qq.com",
+                    email="voter2@securevote.example.invalid",
                     driver_lic_no=make_lic("LIX0001"),
                     driver_lic_state="VIC",
-                    has_voted=False,
                     created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                     account_status="approved",
+                    email_verified=True,
                 )
                 lix.role = voter_role
                 lix.set_password("Password@123!")
@@ -247,7 +257,7 @@ def init_database(app):
                     lix.account_status = "approved"
 
             # Create 110 test voters for development (always enabled for local dev)
-            create_test_voters = os.environ.get('CREATE_TEST_VOTERS', 'true').lower() == 'true'
+            create_test_voters = os.environ.get('CREATE_TEST_VOTERS', 'false').lower() == 'true'
             is_testing_env = app.config.get('TESTING', False)
             if create_test_voters and TEST_VOTERS_AVAILABLE:
                 print("🧪 Creating 110 test voters for development purposes...")
@@ -266,9 +276,9 @@ def init_database(app):
                             driver_lic_no=voter_data['driver_license_number'],
                             driver_lic_state=voter_data['state'],
                             role=voter_role,
-                            has_voted=False,
                             created_at=ts,
                             account_status="approved",
+                            email_verified=True,
                             password_hash=generate_password_hash(
                                 voter_data['password'],
                                 method='pbkdf2:sha256:1' if is_testing_env else 'pbkdf2:sha256'
@@ -289,9 +299,9 @@ def init_database(app):
                                 driver_lic_no=voter_data['driver_license_number'],
                                 driver_lic_state=voter_data['state'],
                                 role=voter_role,
-                                has_voted=False,
                                 created_at=datetime.now(timezone.utc).replace(tzinfo=None),
                                 account_status="approved",
+                                email_verified=True,
                             )
                             # For test voters, bypass strength validation to honor test expectations
                             test_user.password_hash = generate_password_hash(
@@ -412,8 +422,24 @@ def init_database(app):
             raise
 
         try:
-            # 6) candidates (use region_id, not constituency)
+            # 6) single-region, single-contest election rosters
+            from app.models import Election
             if Candidate.query.count() == 0:
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                has_open_election = Election.query.filter_by(status="open").first()
+                sydney_election = Election(
+                    name="Sydney House Election 2025",
+                    status="draft" if has_open_election else "open",
+                    open_at=None if has_open_election else now,
+                    created_by=admin.id if admin else None,
+                )
+                vic_election = Election(
+                    name="Victoria East House Election 2025",
+                    status="draft",
+                    created_by=admin.id if admin else None,
+                )
+                db.session.add_all([sydney_election, vic_election])
+                db.session.flush()
                 db.session.add_all(
                     [
                         #Sydney candidates
@@ -422,18 +448,21 @@ def init_database(app):
                             party="Labor Party",
                             position="House of Representatives",
                             region_id=sydney.id,
+                            election_id=sydney_election.id,
                         ),
                         Candidate(
                             name="Sarah Johnson",
                             party="Liberal Party",
                             position="House of Representatives",
                             region_id=sydney.id,
+                            election_id=sydney_election.id,
                         ),
                         Candidate(
                             name="Mike Brown",
                             party="Greens",
                             position="House of Representatives",
                             region_id=sydney.id,
+                            election_id=sydney_election.id,
                         ),
                         #VIC east candidates
                         Candidate(
@@ -441,21 +470,25 @@ def init_database(app):
                             party="Labor Party",
                             position="House of Representatives",
                             region_id=vic_east.id,
+                            election_id=vic_election.id,
                         ),
                         Candidate(
                             name="Alice White",
                             party="Liberal Party",
                             position="House of Representatives",
                             region_id=vic_east.id,
+                            election_id=vic_election.id,
                         ),
                         Candidate(
                             name="Tom Black",
                             party="Greens",
                             position="House of Representatives",
                             region_id=vic_east.id,
+                            election_id=vic_election.id,
                         ),
                     ]
                 )
+                print("✅ Created single-region Sydney and Victoria East elections")
         except Exception as e:
             print(f"❌ Failed to create candidates: {e}")
             print("💡 This might indicate a schema mismatch in the Candidate table.")
@@ -464,25 +497,20 @@ def init_database(app):
             db.session.rollback()
             raise
 
-        # 7) seed a default open election so voters can vote immediately
+        # Seeded/open elections must have their own immutable blind-signing
+        # authority before the first browser can request a ballot key.
         try:
-            from app.models import Election
-            if Election.query.count() == 0:
-                election = Election(
-                    name="Federal Election 2025",
-                    status="open",
-                    open_at=datetime.now(timezone.utc).replace(tzinfo=None),
-                    created_by=admin.id if admin else None,
-                )
-                db.session.add(election)
-                print("✅ Created default election: Federal Election 2025 (open)")
-            else:
-                print("ℹ️  Elections already exist")
-        except Exception as e:
-            print(f"⚠️  Could not seed election: {e}")
-            db.session.rollback()
+            from app.services.election_key_service import (
+                reconcile_open_election_keys,
+            )
 
-        # 8) commit
+            reconcile_open_election_keys(app.instance_path)
+        except Exception as e:
+            print(f"Failed to prepare election blind-signing keys: {e}")
+            db.session.rollback()
+            raise
+
+        # 7) commit
         try:
             db.session.commit()
         except Exception as e:

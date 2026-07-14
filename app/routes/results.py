@@ -1,19 +1,33 @@
 from flask import Blueprint, jsonify, request, render_template_string, current_app
 from flask_login import login_required, current_user
+from app import db
+from app.logging_service import record_audit_event
+from app.models import Election, ResultSigningPublicKey, SignedElectionResult
 from app.security import signing_service
-from app.services.results_service import get_vote_tallies
+from app.services.results_service import ResultsUnavailableError, get_vote_tallies
 from datetime import datetime, timezone
+from functools import wraps
 import json
+import threading
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 results = Blueprint('results', __name__)
+_result_signing_lock = threading.Lock()
 
-SIGNED_RESULTS = {
-    "data": None,
-    "signature": None
-}
+
+def _serialize_result_signing(function):
+    """Serialize rare manager signing operations within one app process."""
+
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _result_signing_lock:
+            return function(*args, **kwargs)
+
+    return wrapped
 
 @results.route('/results/sign', methods=['POST'])
 @login_required
+@_serialize_result_signing
 def sign_election_results():
     """
     ADMIN-ONLY ENDPOINT.
@@ -23,26 +37,155 @@ def sign_election_results():
     if not getattr(current_user, "is_manager", False):
         return jsonify({"error": "Forbidden"}), 403
 
-    # Build results from actual vote tallies in the database
-    tallies = get_vote_tallies()
+    body = request.get_json(silent=True) or {}
+    election_id = body.get("election_id") or request.form.get("election_id")
+    try:
+        election_id = int(election_id)
+    except (TypeError, ValueError):
+        current_app.logger.debug("Rejected non-integer election_id for signing")
+        return jsonify({"error": "A valid election_id is required."}), 400
+
+    election = (
+        db.session.query(Election)
+        .filter(Election.id == election_id)
+        .with_for_update()
+        .first()
+    )
+    if not election:
+        return jsonify({"error": "Election not found."}), 404
+    if election.status != "closed":
+        db.session.rollback()
+        return jsonify({"error": "Only closed election results can be signed."}), 409
+
+    # A closed election has one canonical signed projection. Holding the
+    # election row lock serializes signers on databases that support FOR UPDATE;
+    # the unique election_id constraint remains the final cross-process guard.
+    if SignedElectionResult.query.filter_by(election_id=election.id).first():
+        db.session.rollback()
+        return jsonify({"error": "Election results have already been signed."}), 409
+
+    try:
+        tallies = get_vote_tallies(election.id)
+    except ResultsUnavailableError:
+        db.session.rollback()
+        current_app.logger.error(
+            "Refused to sign unavailable tallies for election %s",
+            election.id,
+            exc_info=True,
+        )
+        return jsonify({"error": "Authoritative election results are unavailable."}), 503
+
+    signed_at = datetime.now(timezone.utc)
     election_results = {
-        "election_id": "FED2025",
-        "signed_at": datetime.now(timezone.utc).isoformat(),
+        "election_id": election.id,
+        "election_name": election.name,
+        "signed_at": signed_at.isoformat(),
         "results": tallies,
-        "total_votes": sum(tallies.values()),
+        "total_votes": sum(item["votes"] for item in tallies),
     }
 
     # Convert results dictionary to a consistent JSON string (bytes)
     results_json = json.dumps(election_results, sort_keys=True, separators=(',', ':')).encode('utf-8')
 
-    # Use the service to sign the data
-    signature = signing_service.sign_data(results_json)
+    try:
+        signed = signing_service.sign_data(results_json)
+    except signing_service.SigningUnavailableError:
+        db.session.rollback()
+        current_app.logger.error(
+            "Refused to sign election %s because its signing backend is unavailable.",
+            election.id,
+            exc_info=True,
+        )
+        return jsonify({"error": "The result-signing service is unavailable."}), 503
 
-    # Store the signed data and signature (hex-encoded for easy transport)
-    SIGNED_RESULTS['data'] = election_results
-    SIGNED_RESULTS['signature'] = signature.hex()
+    if signed.signer_backend == signing_service.LOCAL_RSA_BACKEND:
+        try:
+            signing_service.validate_local_public_key(
+                signed.public_key_pem,
+                signed.signing_key_id,
+            )
+        except signing_service.SignatureMetadataError:
+            db.session.rollback()
+            current_app.logger.error(
+                "Refused to archive invalid local signing-key provenance.",
+                exc_info=True,
+            )
+            return jsonify({"error": "The result-signing key is invalid."}), 503
 
-    return jsonify({"status": "success", "message": "Results have been digitally signed."})
+        archived_key = db.session.get(
+            ResultSigningPublicKey,
+            signed.signing_key_id,
+        )
+        if archived_key is None:
+            try:
+                with db.session.begin_nested():
+                    db.session.add(
+                        ResultSigningPublicKey(
+                            key_id=signed.signing_key_id,
+                            algorithm=signed.signature_algorithm,
+                            public_key_pem=signed.public_key_pem,
+                        )
+                    )
+                    db.session.flush()
+            except IntegrityError:
+                current_app.logger.info(
+                    "Result-signing public key was archived concurrently."
+                )
+                archived_key = db.session.get(
+                    ResultSigningPublicKey,
+                    signed.signing_key_id,
+                )
+        if archived_key is not None and (
+            archived_key.algorithm != signed.signature_algorithm
+            or archived_key.public_key_pem != signed.public_key_pem
+        ):
+            db.session.rollback()
+            current_app.logger.error(
+                "Local signing-key archive fingerprint collision detected."
+            )
+            return jsonify({"error": "The result-signing key archive is invalid."}), 503
+
+    stored = SignedElectionResult(
+        election_id=election.id,
+        payload=results_json.decode("utf-8"),
+        signature=signed.signature,
+        signed_at=signed_at.replace(tzinfo=None),
+        signed_by=current_user.id,
+        signer_backend=signed.signer_backend,
+        signature_algorithm=signed.signature_algorithm,
+        signing_key_id=signed.signing_key_id,
+        signing_key_version=signed.signing_key_version,
+    )
+    db.session.add(stored)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        current_app.logger.warning(
+            "Rejected a concurrent repeat signing for election %s.",
+            election.id,
+        )
+        return jsonify({"error": "Election results have already been signed."}), 409
+    except SQLAlchemyError:
+        db.session.rollback()
+        current_app.logger.error(
+            "Could not persist the signed results for election %s.",
+            election.id,
+            exc_info=True,
+        )
+        return jsonify({"error": "Signed results could not be persisted."}), 503
+
+    record_audit_event(
+        actor_id=current_user.id,
+        action='result.sign',
+        target_type='election_result',
+        target_id=election.id,
+    )
+    return jsonify({
+        "status": "success",
+        "election_id": election.id,
+        "message": "Results have been digitally signed and persisted.",
+    })
 
 
 @results.route('/results/latest', methods=['GET'])
@@ -51,10 +194,54 @@ def get_latest_results():
     PUBLIC ENDPOINT.
     Provides the latest signed election results for download.
     """
-    if not SIGNED_RESULTS.get('signature'):
+    election_id = request.args.get("election_id")
+    query = SignedElectionResult.query
+    if election_id is not None:
+        try:
+            query = query.filter_by(election_id=int(election_id))
+        except (TypeError, ValueError):
+            current_app.logger.debug("Rejected non-integer election_id for results")
+            return jsonify({"error": "Invalid election_id."}), 400
+    stored = query.order_by(SignedElectionResult.signed_at.desc()).first()
+    if not stored:
         return jsonify({"error": "Results have not been signed yet."}), 404
-        
-    return jsonify(SIGNED_RESULTS)
+
+    archived_key = (
+        db.session.get(ResultSigningPublicKey, stored.signing_key_id)
+        if stored.signer_backend == signing_service.LOCAL_RSA_BACKEND
+        else None
+    )
+    if stored.signer_backend == signing_service.LOCAL_RSA_BACKEND:
+        try:
+            if archived_key is None:
+                raise signing_service.SignatureMetadataError(
+                    "The archived local result-signing key is missing."
+                )
+            if archived_key.algorithm != stored.signature_algorithm:
+                raise signing_service.SignatureMetadataError(
+                    "The archived local result-signing algorithm does not match."
+                )
+            signing_service.validate_local_public_key(
+                archived_key.public_key_pem,
+                stored.signing_key_id,
+            )
+        except signing_service.SignatureMetadataError:
+            current_app.logger.error(
+                "The local signing provenance for election %s is unavailable.",
+                stored.election_id,
+                exc_info=True,
+            )
+            return jsonify({"error": "Result signing provenance is unavailable."}), 503
+
+    return jsonify({
+        "data": json.loads(stored.payload),
+        "signature": stored.signature,
+        "signer_backend": stored.signer_backend,
+        "signature_algorithm": stored.signature_algorithm,
+        "signing_key_id": stored.signing_key_id,
+        "signing_key_version": stored.signing_key_version,
+        "public_key_pem": archived_key.public_key_pem if archived_key else None,
+    })
 
 
 @results.route('/results/verify', methods=['POST'])
@@ -63,17 +250,66 @@ def verify_election_results():
     PUBLIC ENDPOINT.
     Allows anyone to submit data and a signature to verify its authenticity.
     """
-    data = request.json.get('data')
-    signature_hex = request.json.get('signature')
+    body = request.get_json(silent=True) or {}
+    data = body.get('data')
+    signature = body.get('signature')
 
-    if not all([data, signature_hex]):
+    if not isinstance(data, dict) or not isinstance(signature, str) or not signature:
         return jsonify({"error": "Missing 'data' or 'signature' in request."}), 400
 
     # Convert incoming data to the same consistent format before verification
     data_bytes = json.dumps(data, sort_keys=True, separators=(',', ':')).encode('utf-8')
-    signature_bytes = bytes.fromhex(signature_hex)
-    
-    is_valid = signing_service.verify_signature(data_bytes, signature_bytes)
+    try:
+        election_id = data["election_id"]
+        if isinstance(election_id, bool):
+            raise ValueError
+        election_id = int(election_id)
+    except (TypeError, ValueError):
+        current_app.logger.debug("Rejected invalid election_id for verification")
+        return jsonify({"error": "Signed result data has an invalid election_id."}), 400
+    except KeyError:
+        current_app.logger.debug("Signed result data omitted election_id")
+        return jsonify({"error": "Signed result data has no election_id."}), 400
+
+    stored = SignedElectionResult.query.filter_by(election_id=election_id).first()
+    if stored is None:
+        return jsonify({"error": "No signed result exists for this election."}), 404
+
+    # Verification is for the immutable official projection, not an arbitrary
+    # payload signed by any key the process happens to have access to.
+    if stored.payload != data_bytes.decode("utf-8") or stored.signature != signature:
+        return jsonify({
+            "status": "Verification complete",
+            "is_valid": False,
+        })
+
+    try:
+        archived_key = (
+            db.session.get(ResultSigningPublicKey, stored.signing_key_id)
+            if stored.signer_backend == signing_service.LOCAL_RSA_BACKEND
+            else None
+        )
+        is_valid = signing_service.verify_signature(
+            data_bytes,
+            signature,
+            signer_backend=stored.signer_backend,
+            signature_algorithm=stored.signature_algorithm,
+            signing_key_id=stored.signing_key_id,
+            signing_key_version=stored.signing_key_version,
+            public_key_pem=(
+                archived_key.public_key_pem if archived_key is not None else None
+            ),
+        )
+    except (
+        signing_service.SignatureMetadataError,
+        signing_service.SigningUnavailableError,
+    ):
+        current_app.logger.error(
+            "Could not verify the persisted result for election %s.",
+            election_id,
+            exc_info=True,
+        )
+        return jsonify({"error": "Result verification is unavailable."}), 503
     
     return jsonify({
         "status": "Verification complete",
@@ -140,7 +376,10 @@ def results_test_panel():
             async function postData(url = '', data = {}) {
                 const response = await fetch(url, {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-Token': '{{ csrf_token() }}'
+                    },
                     body: JSON.stringify(data)
                 });
                 return response.json();

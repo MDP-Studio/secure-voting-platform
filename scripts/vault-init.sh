@@ -1,95 +1,65 @@
-#!/bin/bash
+#!/bin/sh
 
-# Vault initialization script for the voting system
-# This script sets up the transit engine and creates the necessary keys for result signing
+# Configure the local-development Vault and hand the web process only a scoped
+# token. Root credentials remain in this one-shot initializer.
+set -eu
 
-set -e
+: "${VAULT_ADDR:?VAULT_ADDR is required}"
+: "${VAULT_TOKEN:?VAULT_TOKEN is required for one-shot initialization}"
+: "${VAULT_MOUNT:?VAULT_MOUNT is required}"
+: "${VAULT_KV_MOUNT:?VAULT_KV_MOUNT is required}"
+: "${VAULT_TRANSIT_KEY:?VAULT_TRANSIT_KEY is required}"
+: "${VAULT_TOKEN_OUTPUT:?VAULT_TOKEN_OUTPUT is required}"
 
-# Wait for Vault to be ready
-echo "Waiting for Vault to be ready..."
-until vault status > /dev/null 2>&1; do
-    echo "Vault is not ready yet, waiting..."
+case "${VAULT_TOKEN}" in
+    CHANGE_ME*|change_me*|REPLACE_*|replace_*)
+        echo "VAULT_TOKEN must not be a placeholder" >&2
+        exit 1
+        ;;
+esac
+if [ "${#VAULT_TOKEN}" -lt 16 ]; then
+    echo "VAULT_TOKEN must be at least 16 characters" >&2
+    exit 1
+fi
+
+until vault status >/dev/null 2>&1; do
     sleep 2
 done
 
-echo "Vault is ready!"
+if ! vault secrets list -format=json | grep -q "\"${VAULT_MOUNT}/\""; then
+    vault secrets enable -path="${VAULT_MOUNT}" transit >/dev/null
+fi
 
-# Enable the transit secrets engine
-echo "Enabling transit secrets engine..."
-vault secrets enable -path=transit transit
+if ! vault read "${VAULT_MOUNT}/keys/${VAULT_TRANSIT_KEY}" >/dev/null 2>&1; then
+    vault write -f "${VAULT_MOUNT}/keys/${VAULT_TRANSIT_KEY}" \
+        type=rsa-2048 >/dev/null
+fi
 
-# Create the results signing key
-echo "Creating results signing key..."
-vault write -f transit/keys/results-signing \
-    type=rsa-2048 \
-    allow_plaintext_backup=true
+if ! vault secrets list -format=json | grep -q "\"${VAULT_KV_MOUNT}/\""; then
+    vault secrets enable -path="${VAULT_KV_MOUNT}" kv-v2 >/dev/null
+fi
 
-# Enable KV v2 secrets engine
-echo "Enabling KV v2 secrets engine..."
-vault secrets enable -path=kv kv-v2
-
-# Create some sample secrets for the voting system
-echo "Creating sample secrets..."
-
-# JWT secret for Flask session management
-vault kv put kv/app/jwt \
-    secret="vault-managed-jwt-secret-key-for-tokens"
-
-vault kv put kv/voting/config \
-    admin_email="admin@voting-system.local" \
-    system_name="Secure Voting System" \
-    maintenance_mode="false"
-
-vault kv put kv/voting/security \
-    max_login_attempts="5" \
-    session_timeout="3600" \
-    password_min_length="12"
-
-# Create a policy for the voting system
-echo "Creating voting system policy..."
-vault policy write voting-system - <<EOF
-# Allow reading and writing to transit for result signing
-path "transit/sign/results-signing" {
+vault policy write securevote-web - >/dev/null <<EOF
+path "${VAULT_MOUNT}/sign/${VAULT_TRANSIT_KEY}" {
   capabilities = ["update"]
 }
 
-path "transit/verify/results-signing" {
+path "${VAULT_MOUNT}/verify/${VAULT_TRANSIT_KEY}" {
   capabilities = ["update"]
 }
 
-# Allow reading JWT secret from KV
-path "kv/data/app/jwt" {
+path "${VAULT_MOUNT}/keys/${VAULT_TRANSIT_KEY}" {
   capabilities = ["read"]
-}
-
-# Allow reading configuration from KV
-path "kv/data/voting/*" {
-  capabilities = ["read"]
-}
-
-# Allow listing KV secrets
-path "kv/metadata/app/jwt" {
-  capabilities = ["read"]
-}
-
-path "kv/metadata/voting/*" {
-  capabilities = ["list", "read"]
 }
 EOF
 
-# Create a token for the voting system
-echo "Creating voting system token..."
-VAULT_TOKEN=$(vault token create -policy=voting-system -format=json | jq -r '.auth.client_token')
+umask 077
+mkdir -p "$(dirname "${VAULT_TOKEN_OUTPUT}")"
+vault token create \
+    -field=token \
+    -policy=securevote-web \
+    -ttl=168h \
+    -renewable=true >"${VAULT_TOKEN_OUTPUT}"
 
-echo "Vault initialization complete!"
-echo "=========================================="
-echo "Vault Address: http://localhost:8200"
-echo "Root Token: vault-dev-token"
-echo "Voting System Token: $VAULT_TOKEN"
-echo "=========================================="
-echo ""
-echo "You can access the Vault UI at: http://localhost:8200"
-echo "Login with the root token: vault-dev-token"
-echo ""
-echo "The voting system will use the transit engine for result signing"
-echo "and can access configuration from the KV store."
+test -s "${VAULT_TOKEN_OUTPUT}"
+echo "Vault Transit and scoped web credentials are ready."

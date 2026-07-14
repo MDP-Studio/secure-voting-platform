@@ -265,11 +265,12 @@ class TestPasswordValidationIntegration:
     def test_registration_with_strong_password(self, client, app):
         """Test that registration succeeds with strong password."""
         valid_license = _generate_valid_driver_license("DL12341")
+        exact_password = ' StrongPass@123 '
         response = client.post('/register', data={
             'username': 'stronguser',
             'email': 'stronguser@test.com',
-            'password': 'StrongPass@123',  # 12+ chars with uppercase, lowercase, special char, digit
-            'confirm': 'StrongPass@123',
+            'password': exact_password,
+            'confirm': exact_password,
             'driver_lic_no': valid_license,  # Programmatically generated valid license
             'driver_lic_state': 'NSW'
         }, follow_redirects=True)
@@ -278,7 +279,28 @@ class TestPasswordValidationIntegration:
         with app.app_context():
             user = User.query.filter_by(username='stronguser').first()
             assert user is not None, "User with strong password should be created"
-            assert user.check_password('StrongPass@123'), "Password should match"
+            assert user.check_password(exact_password), "Password should match exactly"
+            assert not user.check_password(exact_password.strip())
+
+    def test_registration_rejects_duplicate_normalized_driver_licence(
+        self,
+        client,
+        app,
+    ):
+        response = client.post('/register', data={
+            'username': 'duplicate-licence',
+            'email': 'duplicate-licence@test.com',
+            'password': 'StrongPass@123',
+            'confirm': 'StrongPass@123',
+            # Existing voter1 has VIC00014. Whitespace and case must not bypass
+            # the keyed normalized blind-index lookup.
+            'driver_lic_no': ' vic 00014 ',
+            'driver_lic_state': 'VIC',
+        }, follow_redirects=True)
+
+        assert b'Driver licence already bound to another account' in response.data
+        with app.app_context():
+            assert User.query.filter_by(username='duplicate-licence').first() is None
 
 
 if __name__ == '__main__':

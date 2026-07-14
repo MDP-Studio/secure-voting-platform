@@ -9,8 +9,7 @@ Tests for features added during the portfolio overhaul:
 - Vote anonymity
 - Audit trail UI
 """
-import pytest
-from app.models import User, Vote, Election
+from app.models import Vote, VoteReceipt, Election
 
 
 class TestPasswordReset:
@@ -74,8 +73,8 @@ class TestElections:
         assert response.status_code == 200
         assert b'Election Management' in response.data
 
-    def test_vote_blocked_without_open_election(self, client, app):
-        """Voting should fail if no election is open."""
+    def test_direct_vote_is_disabled_even_without_open_election(self, client, app):
+        """The retired direct endpoint never falls back to identity-linked voting."""
         with app.app_context():
             # Close all elections
             for e in Election.query.all():
@@ -89,8 +88,9 @@ class TestElections:
         })
         response = client.post('/vote', data={
             'candidate_id': 1
-        }, follow_redirects=True)
-        assert b'No election is currently open' in response.data
+        })
+        assert response.status_code == 410
+        assert b'Direct ballot submission is disabled' in response.data
 
 
 class TestErrorPages:
@@ -114,8 +114,8 @@ class TestErrorPages:
 class TestVoteAnonymity:
     """Vote anonymity and integrity tests."""
 
-    def test_vote_has_no_user_id(self, client, app):
-        """Vote records must not contain user_id."""
+    def test_direct_endpoint_cannot_create_ballot_or_receipt(self, client, app):
+        """An authenticated candidate choice cannot enter ballot storage."""
         client.post('/login', data={
             'username': 'voter1',
             'password': 'Password@123!'
@@ -125,16 +125,22 @@ class TestVoteAnonymity:
             from app.models import Candidate
             candidate = Candidate.query.first()
 
-        client.post('/vote', data={'candidate_id': candidate.id})
+        response = client.post('/vote', data={'candidate_id': candidate.id})
+        assert response.status_code == 410
 
         with app.app_context():
-            vote = Vote.query.first()
-            assert vote is not None
-            # The Vote model should NOT have user_id
-            assert not hasattr(vote, 'user_id') or getattr(vote, 'user_id', None) is None
-            # voter_token should be a random hex string, not derivable from any user
-            assert vote.voter_token is not None
-            assert len(vote.voter_token) == 64  # 32 bytes hex = 64 chars
+            assert Vote.query.count() == 0
+            assert VoteReceipt.query.count() == 0
+
+    def test_dashboard_has_no_identity_linked_noscript_fallback(self, client):
+        client.post('/login', data={
+            'username': 'voter1',
+            'password': 'Password@123!'
+        })
+        response = client.get('/dashboard')
+        assert response.status_code == 200
+        assert b'No identity-linked form fallback is provided' in response.data
+        assert b'action="/vote"' not in response.data
 
     def test_voter_token_is_random(self, client, app):
         """voter_token should not be deterministic — running the service twice

@@ -7,10 +7,9 @@ recorded regardless of how many threads raced.
 
 Why this matters:
 -----------------
-The vote service uses ``SELECT ... FOR UPDATE`` (pessimistic row locking)
-on the User record to prevent a TOCTOU race where two concurrent requests
-both read ``has_voted=False`` before either commits.  Sequential unit tests
-cannot catch this class of bug — you need actual concurrency.
+The vote service combines a row lock with a per-election receipt constraint.
+Sequential unit tests cannot catch this class of race, so this test uses
+concurrent database sessions.
 
 Design:
 -------
@@ -32,7 +31,7 @@ import pytest
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from app import db, create_app
-from app.models import User, Vote, Candidate, Election
+from app.models import User, Vote, VoteReceipt, Candidate, Election
 from app.vote_service import cast_anonymous_vote, AlreadyVotedError
 
 
@@ -52,7 +51,7 @@ class TestVoteConcurrency:
             candidate = Candidate.query.first()
             voter = User.query.filter_by(username='voter1').first()
             assert voter is not None
-            assert voter.has_voted is False
+            assert VoteReceipt.query.filter_by(user_id=voter.id).count() == 0
             voter_id = voter.id
             candidate_id = candidate.id
 
@@ -69,7 +68,7 @@ class TestVoteConcurrency:
                     cast_anonymous_vote(db, user, cand)
                     with lock:
                         successes.append(True)
-                except (AlreadyVotedError, Exception) as e:
+                except AlreadyVotedError as e:
                     logging.getLogger(__name__).debug("Handled exception in tests/test_vote_concurrency.py", exc_info=True)
                     with lock:
                         failures.append(str(e))
@@ -88,8 +87,11 @@ class TestVoteConcurrency:
                 f"Successes: {len(successes)}, Failures: {len(failures)}"
             )
 
-            voter = db.session.get(User, voter_id)
-            assert voter.has_voted is True
+            election_id = db.session.get(Candidate, candidate_id).election_id
+            assert VoteReceipt.query.filter_by(
+                user_id=voter_id,
+                election_id=election_id,
+            ).count() == 1
 
         assert len(successes) == 1, (
             f"Exactly 1 thread should succeed, got {len(successes)}"
@@ -116,6 +118,7 @@ class TestVoteConcurrency:
                 driver_lic_no='CON00017',
                 driver_lic_state='NSW',
                 account_status='approved',
+                email_verified=True,
             )
             voter2.role_id = voter_role.id
             voter2.set_password('Password@123!')

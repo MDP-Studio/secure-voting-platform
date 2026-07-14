@@ -342,3 +342,266 @@ def rate_limit_aware_session(http_runner):
     # Restore original method
     http_runner.post = original_post
     http_runner.session.cookies.clear()
+
+
+@pytest.fixture(scope="module")
+def mysql_split_app():
+    """Create a real-MySQL app with independent runtime bind credentials.
+
+    This fixture is intentionally opt-in and runs in a dedicated pytest process
+    in CI. The normal test suite mutates SQLAlchemy metadata for its SQLite
+    fixture, while this test must retain the production split-bind layout.
+    """
+    if os.environ.get("MYSQL_FLASK_INTEGRATION_TEST") != "1":
+        pytest.skip("requires the dedicated CI MySQL Flask integration fixture")
+
+    from datetime import date, datetime, timedelta, timezone
+    from uuid import uuid4
+
+    from sqlalchemy import event, text
+
+    from app import create_app, db
+    from app.models import Candidate, Election, ElectoralRoll, Region, Role, User
+
+    app = create_app(
+        {
+            "TESTING": False,
+            "PROPAGATE_EXCEPTIONS": True,
+            "WTF_CSRF_ENABLED": False,
+            "ENABLE_MFA": False,
+            "DEBUG_DB_BIND": True,
+        }
+    )
+
+    suffix = uuid4().hex[:12]
+    voter_password = "Ci-Voter-Password!2026"
+    manager_password = "Ci-Manager-Password!2026"
+    seeded = {}
+
+    with app.app_context():
+        try:
+            voter_role = Role.query.filter_by(name="voter").first()
+            if voter_role is None:
+                voter_role = Role(name="voter", description="Eligible voter")
+                db.session.add(voter_role)
+
+            manager_role = Role.query.filter_by(name="manager").first()
+            if manager_role is None:
+                manager_role = Role(name="manager", description="Election manager")
+                db.session.add(manager_role)
+
+            region = Region(name=f"CI split-bind region {suffix}")
+            voter = User(
+                username=f"ci_voter_{suffix}",
+                email=f"ci-voter-{suffix}@example.invalid",
+                driver_lic_no=f"CIVOTER{suffix}",
+                driver_lic_state="VIC",
+                role=voter_role,
+                account_status="approved",
+                email_verified=True,
+            )
+            voter.set_password(voter_password)
+            voter.failed_login_attempts = 1
+            manager = User(
+                username=f"ci_manager_{suffix}",
+                email=f"ci-manager-{suffix}@example.invalid",
+                driver_lic_no=f"CIMANAGER{suffix}",
+                driver_lic_state="VIC",
+                role=manager_role,
+                account_status="approved",
+                email_verified=True,
+            )
+            manager.set_password(manager_password)
+            manager.failed_login_attempts = 1
+
+            enrolment = ElectoralRoll(
+                roll_number=f"CI-ROLL-{suffix}",
+                driver_license_number=f"CIVOTER{suffix}",
+                full_name="CI Split Bind Voter",
+                date_of_birth=date(1990, 1, 1),
+                address_line1="1 Test Street",
+                suburb="Melbourne",
+                state="VIC",
+                postcode="3000",
+                region=region,
+                status="active",
+                verified=True,
+                verified_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                user=voter,
+            )
+            db.session.add_all([region, voter, manager, enrolment])
+            db.session.flush()
+
+            open_election = Election(
+                name=f"CI open election {suffix}",
+                status="open",
+                open_at=(datetime.now(timezone.utc) - timedelta(minutes=5)).replace(
+                    tzinfo=None
+                ),
+                close_at=(datetime.now(timezone.utc) + timedelta(hours=1)).replace(
+                    tzinfo=None
+                ),
+                created_by=manager.id,
+            )
+            open_candidate = Candidate(
+                name="CI Open Candidate",
+                party="Integration Test Party",
+                position="Representative",
+                region=region,
+                election=open_election,
+            )
+            draft_election = Election(
+                name=f"CI draft election {suffix}",
+                status="draft",
+                created_by=manager.id,
+            )
+            draft_candidate = Candidate(
+                name="CI Draft Candidate",
+                party="Integration Test Party",
+                position="Representative",
+                region=region,
+                election=draft_election,
+            )
+            db.session.add_all(
+                [
+                    open_election,
+                    open_candidate,
+                    draft_election,
+                    draft_candidate,
+                ]
+            )
+            db.session.flush()
+            from app.security.blind_signature import (
+                ensure_election_blind_signing_key,
+            )
+
+            key_components = ensure_election_blind_signing_key(
+                app.instance_path,
+                open_election.id,
+                None,
+                allow_create=True,
+            )
+            open_election.blind_signing_key_id = key_components["key_id"]
+            db.session.commit()
+            seeded.update(
+                {
+                    "voter_id": voter.id,
+                    "voter_username": voter.username,
+                    "voter_password": voter_password,
+                    "manager_id": manager.id,
+                    "manager_username": manager.username,
+                    "manager_password": manager_password,
+                    "region_id": region.id,
+                    "open_election_id": open_election.id,
+                    "open_candidate_id": open_candidate.id,
+                    "draft_election_id": draft_election.id,
+                    "draft_candidate_id": draft_candidate.id,
+                }
+            )
+        except Exception:
+            db.session.rollback()
+            raise
+        finally:
+            db.session.remove()
+
+        engines = {
+            "default": db.engines[None],
+            "voters": db.engines["voters"],
+            "admin": db.engines["admin"],
+        }
+        statements = {name: [] for name in engines}
+        listeners = []
+
+        for name, engine in engines.items():
+            def record_statement(
+                _connection,
+                _cursor,
+                statement,
+                _parameters,
+                _context,
+                _executemany,
+                *,
+                bind_name=name,
+            ):
+                statements[bind_name].append(statement)
+
+            event.listen(engine, "before_cursor_execute", record_statement)
+            listeners.append((engine, record_statement))
+
+    try:
+        yield {
+            "app": app,
+            "engines": engines,
+            "statements": statements,
+            **seeded,
+        }
+    finally:
+        with app.app_context():
+            db.session.remove()
+            for engine, listener in listeners:
+                event.remove(engine, "before_cursor_execute", listener)
+
+            cleanup_params = {
+                "open_election_id": seeded["open_election_id"],
+                "draft_election_id": seeded["draft_election_id"],
+                "voter_id": seeded["voter_id"],
+                "manager_id": seeded["manager_id"],
+                "region_id": seeded["region_id"],
+            }
+            with engines["default"].begin() as connection:
+                connection.execute(
+                    text(
+                        "DELETE FROM vote_receipt WHERE election_id IN "
+                        "(:open_election_id, :draft_election_id)"
+                    ),
+                    cleanup_params,
+                )
+                connection.execute(
+                    text(
+                        "DELETE FROM blind_signature_token WHERE election_id IN "
+                        "(:open_election_id, :draft_election_id)"
+                    ),
+                    cleanup_params,
+                )
+                connection.execute(
+                    text(
+                        "DELETE FROM spent_ballot_nullifier WHERE election_id IN "
+                        "(:open_election_id, :draft_election_id)"
+                    ),
+                    cleanup_params,
+                )
+                connection.execute(
+                    text(
+                        "DELETE FROM vote WHERE election_id IN "
+                        "(:open_election_id, :draft_election_id)"
+                    ),
+                    cleanup_params,
+                )
+                connection.execute(
+                    text(
+                        "DELETE FROM candidate WHERE election_id IN "
+                        "(:open_election_id, :draft_election_id)"
+                    ),
+                    cleanup_params,
+                )
+                connection.execute(
+                    text(
+                        "DELETE FROM election WHERE id IN "
+                        "(:open_election_id, :draft_election_id)"
+                    ),
+                    cleanup_params,
+                )
+                connection.execute(
+                    text("DELETE FROM electoral_roll WHERE user_id = :voter_id"),
+                    cleanup_params,
+                )
+                connection.execute(
+                    text(
+                        "DELETE FROM user WHERE id IN (:voter_id, :manager_id)"
+                    ),
+                    cleanup_params,
+                )
+                connection.execute(
+                    text("DELETE FROM regions WHERE id = :region_id"),
+                    cleanup_params,
+                )

@@ -3,9 +3,8 @@ Smoke tests for the voting application.
 These tests verify basic functionality works correctly.
 """
 
-import pytest
 from flask import url_for
-from app.models import User, Candidate, Vote
+from app.models import User, Candidate, Vote, VoteReceipt
 
 
 class TestSmokeTests:
@@ -92,7 +91,7 @@ class TestSmokeTests:
         assert b'Sarah Johnson' in response.data
 
     def test_voting_functionality(self, client):
-        """Test the complete voting process."""
+        """The retired identity-linked form endpoint cannot record a ballot."""
         with client.application.app_context():
             candidate = Candidate.query.filter_by(name='John Smith').first()
             assert candidate is not None
@@ -103,22 +102,24 @@ class TestSmokeTests:
             'password': 'Password@123!'
         })
 
-        # Vote for candidate
+        # Direct form voting is deliberately disabled.
         response = client.post('/vote', data={
             'candidate_id': candidate.id
-        }, follow_redirects=True)
+        })
 
-        assert response.status_code == 200
-        # Should show "Vote cast successfully" on dashboard after voting
-        assert b'Vote cast successfully' in response.data
+        assert response.status_code == 410
+        # The endpoint explains the supported anonymous path.
+        assert b'Direct ballot submission is disabled' in response.data
 
-        # Verify vote was recorded (vote is anonymous — check by candidate, not user)
+        # Verify the retired endpoint wrote no identity receipt or ballot.
         with client.application.app_context():
             user = User.query.filter_by(username='voter1').first()
-            assert user.has_voted is True
+            assert VoteReceipt.query.filter_by(
+                user_id=user.id,
+                election_id=candidate.election_id,
+            ).count() == 0
             # The Vote table no longer stores user_id; verify a vote exists for the candidate
-            vote = Vote.query.filter_by(candidate_id=candidate.id).first()
-            assert vote is not None
+            assert Vote.query.filter_by(candidate_id=candidate.id).count() == 0
 
     def test_admin_results_access(self, client):
         """Test that admin can access results page."""
@@ -164,7 +165,7 @@ class TestSmokeTests:
         assert '/login' in response.headers['Location']
 
     def test_prevent_double_voting(self, client):
-        """Test that users cannot vote twice."""
+        """Repeated direct submissions remain disabled and side-effect free."""
         with client.application.app_context():
             candidate = Candidate.query.filter_by(name='John Smith').first()
 
@@ -174,26 +175,33 @@ class TestSmokeTests:
             'password': 'Password@123!'
         })
 
-        # First vote
-        client.post('/vote', data={'candidate_id': candidate.id})
+        first = client.post('/vote', data={'candidate_id': candidate.id})
+        assert first.status_code == 410
 
-        # Try to vote again
-        response = client.post('/vote', data={'candidate_id': candidate.id}, follow_redirects=True)
-        assert response.status_code == 200
-        # Should show error message since user has already voted
-        assert b'You have already voted' in response.data
+        second = client.post('/vote', data={'candidate_id': candidate.id})
+        assert second.status_code == 410
+        assert b'Direct ballot submission is disabled' in second.data
 
-    @pytest.mark.skip(reason="In test mode, the remote_addr check might not work the same way")
+        with client.application.app_context():
+            user = User.query.filter_by(username='voter1').one()
+            assert VoteReceipt.query.filter_by(
+                user_id=user.id,
+                election_id=candidate.election_id,
+            ).count() == 0
+            assert Vote.query.filter_by(election_id=candidate.election_id).count() == 0
+
     def test_developer_dashboard_denied_from_remote(self, client):
         """Test that developer dashboard denies access from non-localhost."""
-        # In test mode, the remote_addr check might not work the same way
-        # Let's skip this test for now since the functionality works in real usage
-        assert True
+        response = client.get(
+            '/dev/dashboard',
+            environ_base={'REMOTE_ADDR': '203.0.113.10'},
+        )
+        assert response.status_code == 403
 
     def test_developer_dashboard_allowed_from_localhost(self, client):
         """Test that developer dashboard allows access from localhost."""
-        # In test mode, the remote_addr check might not work the same way
-        # Let's test that the route exists and returns something
-        response = client.get('/dev/dashboard')
-        # In test mode, it might return 200 or handle remote_addr differently
-        assert response.status_code in [200, 403]  # Either allowed or denied
+        response = client.get(
+            '/dev/dashboard',
+            environ_base={'REMOTE_ADDR': '127.0.0.1'},
+        )
+        assert response.status_code == 200

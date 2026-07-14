@@ -4,21 +4,48 @@ from flask_login import login_required, current_user
 from sqlalchemy.exc import IntegrityError
 from app.helpers import flash_once
 from app import db
-from app.models import Candidate, Region
+from app.logging_service import record_audit_event
+from app.models import BlindSignatureToken, Candidate, Region, VoteReceipt
 from app.utils.auth_decorators import roles_required
-from app.vote_service import cast_anonymous_vote, AlreadyVotedError
+from app.vote_service import IneligibleVoterError, lock_and_validate_voter
 
 main = Blueprint('main', __name__)
 
-def user_is_eligible_to_vote(user):
+def user_is_eligible_to_vote(user, election=None):
+    """Return eligibility for the supplied election, not for the user's lifetime."""
+    from app.models import BlindSignatureToken, VoteReceipt
+
     enrol = getattr(user, "enrolment", None)
-    return (
-        user.has_role("voter")
-        and not user.has_voted
+    base_eligible = (
+        user.is_approved
+        and user.email_verified
+        and user.has_role("voter")
         and enrol is not None
         and enrol.status == "active"
         and enrol.verified
     )
+    if not base_eligible:
+        return False
+    if election is None:
+        return True
+    election_candidates = Candidate.query.filter_by(election_id=election.id).all()
+    regions = {candidate.region_id for candidate in election_candidates}
+    positions = {candidate.position for candidate in election_candidates}
+    if (
+        len(regions) != 1
+        or len(positions) != 1
+        or enrol.region_id not in regions
+    ):
+        return False
+    has_direct_receipt = VoteReceipt.query.filter_by(
+        user_id=user.id,
+        election_id=election.id,
+    ).first()
+    has_blind_authorization = BlindSignatureToken.query.filter_by(
+        user_id=user.id,
+        election_id=election.id,
+    ).first()
+    return not (has_direct_receipt or has_blind_authorization)
 
 # -----------------------------
 # Routes
@@ -34,7 +61,11 @@ def index():
 def profile():
     """Show the current user's profile and enrolment info."""
     enrolment = getattr(current_user, 'enrolment', None)
-    return render_template('profile.html', enrolment=enrolment)
+    return render_template(
+        'profile.html',
+        enrolment=enrolment,
+        election_participation_count=current_user.vote_receipts.count(),
+    )
 
 
 @main.route('/healthz')
@@ -63,12 +94,43 @@ def dashboard():
     Template can use `eligible` to enable/disable vote UI.
     """
     from app.models import Election
-    candidates = Candidate.query.order_by(Candidate.name.asc()).all()
-    eligible = user_is_eligible_to_vote(current_user)
-
     # Check if an election is currently open
-    active_election = Election.query.filter_by(status='open').first()
-    election_open = active_election and active_election.is_open
+    active_election = (
+        Election.query.filter_by(status='open')
+        .order_by(Election.open_at.desc(), Election.id.desc())
+        .first()
+    )
+    election_open = bool(active_election and active_election.is_open)
+    candidates = (
+        Candidate.query.filter_by(election_id=active_election.id)
+        .order_by(Candidate.name.asc())
+        .all()
+        if election_open
+        else []
+    )
+    eligible = user_is_eligible_to_vote(current_user, active_election)
+    election_regions = {candidate.region_id for candidate in candidates}
+    election_positions = {candidate.position for candidate in candidates}
+    election_roster_valid = len(election_regions) == 1 and len(election_positions) == 1
+    election_region_match = bool(
+        election_roster_valid
+        and getattr(current_user, "enrolment", None)
+        and current_user.enrolment.region_id in election_regions
+    )
+    has_voted_in_election = bool(
+        active_election
+        and VoteReceipt.query.filter_by(
+            user_id=current_user.id,
+            election_id=active_election.id,
+        ).first()
+    )
+    has_ballot_authorization = bool(
+        active_election
+        and BlindSignatureToken.query.filter_by(
+            user_id=current_user.id,
+            election_id=active_election.id,
+        ).first()
+    )
 
     return render_template(
         'dashboard.html',
@@ -77,6 +139,10 @@ def dashboard():
         eligible=eligible,
         election_open=election_open,
         active_election=active_election,
+        has_voted_in_election=has_voted_in_election,
+        has_ballot_authorization=has_ballot_authorization,
+        election_roster_valid=election_roster_valid,
+        election_region_match=election_region_match,
     )
 
 
@@ -87,6 +153,8 @@ def delegate_dashboard():
     Delegates see candidates (optionally restricted to their region).
     Managers see all candidates.
     """
+    from app.models import Election
+
     delegate_region = getattr(getattr(current_user, "enrolment", None), "region", None)
     # Determine user's state from enrolment if available, otherwise from licence state
     enrol = getattr(current_user, "enrolment", None)
@@ -113,72 +181,28 @@ def delegate_dashboard():
         "delegates_dashboard.html",
         candidates=candidates,
         regions=regions,
-        delegate_region=delegate_region
+        delegate_region=delegate_region,
+        draft_elections=Election.query.filter_by(status="draft")
+        .order_by(Election.created_at.desc())
+        .all(),
     )
 
 
 @main.route('/vote', methods=['POST'])
 @login_required
 def vote():
-    """
-    Records a single vote per user.
-    - Enforces admin approval and eligibility.
-    - Enforces one vote per user via DB unique constraint on Vote.user_id.
-    """
-    # Check there is an active election
-    from app.models import Election
-    active_election = Election.query.filter_by(status='open').first()
-    if not active_election or not active_election.is_open:
-        flash_once('No election is currently open for voting.', 'error')
-        return redirect(url_for("main.dashboard"))
-
-    # Explicit approval gate (clear message)
-    if not getattr(current_user, "is_approved", False):
-        flash_once("Your account is pending admin approval.")
-        return redirect(url_for("main.dashboard"))
-
-    if current_user.has_voted:
-        flash_once('You have already voted.')
-        return redirect(url_for("main.dashboard"))
-
-    # only verified voters on the roll can vote
-    if not user_is_eligible_to_vote(current_user):
-        flash_once('You are not eligible to vote.')
-        return redirect(url_for("main.dashboard"))  # Keep voters on the dashboard after eligibility denial.
-
-    candidate_id_raw = request.form.get("candidate_id")
-    try:
-        candidate_id = int(candidate_id_raw)
-    except (TypeError, ValueError):
-        logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
-        flash_once('Invalid candidate selected.')
-        return redirect(url_for("main.dashboard"))
-
-    candidate = db.session.get(Candidate, candidate_id)
-    if not candidate:
-        flash_once('Invalid candidate selected.')
-        return redirect(url_for("main.dashboard"))
-
-    # must vote in own region
-    if current_user.enrolment.region_id != candidate.region_id:
-        flash_once('You can only vote for candidates in your region.')
-        return redirect(url_for("main.dashboard"))
-
-    # Cast vote with pessimistic row lock to prevent TOCTOU race condition
-    try:
-        cast_anonymous_vote(db, current_user, candidate)
-    except AlreadyVotedError:
-        logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
-        flash_once('You have already voted.')
-        return redirect(url_for('main.dashboard'))
-    except IntegrityError:
-        logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
-        db.session.rollback()
-        flash_once('You have already voted.')
-        return redirect(url_for('main.dashboard'))
-
-    flash_once('Vote cast successfully!')
-    return redirect(url_for('main.dashboard'))
+    """Reject the retired identity-linkable direct ballot submission path."""
+    current_app.logger.warning(
+        "Rejected a direct ballot submission; blind anonymous voting is required"
+    )
+    return jsonify(
+        {
+            "error": (
+                "Direct ballot submission is disabled. "
+                "Use the browser blind-ballot flow."
+            )
+        }
+    ), 410
 
 
 # =====================================================================
@@ -187,70 +211,156 @@ def vote():
 
 @main.route('/vote/blind-key')
 def blind_signing_public_key():
-    """Public endpoint: return RSA public key components for client-side blinding."""
-    from app.security.blind_signature import get_public_key_components
-    return jsonify(get_public_key_components(current_app.instance_path))
+    """Return the immutable public key for one open election."""
+    from app.models import Election
+    from app.security.blind_signature import (
+        BlindSigningKeyError,
+        ensure_election_blind_signing_key,
+    )
+
+    raw_election_id = request.args.get("election_id")
+    try:
+        election_id = int(raw_election_id)
+        if election_id < 1:
+            raise ValueError
+    except (TypeError, ValueError):
+        current_app.logger.debug("Rejected invalid election_id for blind key")
+        return jsonify({"error": "A valid election_id is required"}), 400
+
+    election = db.session.get(Election, election_id)
+    if election is None:
+        return jsonify({"error": "Election not found"}), 404
+    if not election.is_open:
+        return jsonify({"error": "Election is not open"}), 409
+
+    try:
+        components = ensure_election_blind_signing_key(
+            current_app.instance_path,
+            election.id,
+            election.blind_signing_key_id,
+        )
+    except BlindSigningKeyError:
+        current_app.logger.error(
+            "The blind-signing key for election %s is unavailable.",
+            election.id,
+            exc_info=True,
+        )
+        return jsonify({"error": "Election signing key is unavailable"}), 503
+
+    return jsonify({**components, "election_id": election.id})
 
 
 @main.route('/vote/request-token', methods=['POST'])
 @login_required
 def request_blind_token():
-    """
-    Phase 1 (authenticated): Sign a blinded ballot.
-
-    The voter sends a blinded ballot and a nonce hash. The server:
-    - Verifies eligibility (same checks as /vote)
-    - Signs the blinded data WITHOUT seeing the ballot contents
-    - Issues a VoteReceipt (double-vote prevention)
-    - Returns the blind signature
-
-    The server sees: blinded_ballot (random-looking int), nonce_hash.
-    The server does NOT see: candidate_id, actual ballot.
-    """
-    from app.models import Election, User, VoteReceipt, BlindSignatureToken
-    from app.security.blind_signature import blind_sign
+    """Issue one identity-separated blind signature per voter and election."""
+    from app.models import Election, VoteReceipt, BlindSignatureToken
+    from app.security.blind_signature import (
+        BlindSigningKeyError,
+        blind_sign,
+        ensure_election_blind_signing_key,
+    )
 
     data = request.get_json(silent=True)
-    if not data or 'blinded_ballot' not in data or 'nonce_hash' not in data:
-        return jsonify({"error": "Missing blinded_ballot or nonce_hash"}), 400
+    required = {"blinded_ballot", "election_id"}
+    if not data or not required.issubset(data):
+        return jsonify({"error": "Missing blinded_ballot or election_id"}), 400
 
     # Eligibility checks (same as /vote)
-    active_election = Election.query.filter_by(status='open').first()
-    if not active_election or not active_election.is_open:
-        return jsonify({"error": "No election is currently open"}), 400
+    try:
+        election_id = int(data["election_id"])
+    except (TypeError, ValueError):
+        current_app.logger.debug("Rejected non-integer election_id")
+        return jsonify({"error": "Invalid election_id"}), 400
 
-    if not getattr(current_user, "is_approved", False):
-        return jsonify({"error": "Account pending approval"}), 403
-
-    if not user_is_eligible_to_vote(current_user):
-        return jsonify({"error": "Not eligible to vote"}), 403
-
-    # Pessimistic lock on user row
-    locked_user = (
-        db.session.query(User)
-        .filter(User.id == current_user.id)
+    active_election = (
+        db.session.query(Election)
+        .filter(Election.id == election_id)
         .with_for_update()
         .first()
     )
-    if not locked_user or locked_user.has_voted:
-        return jsonify({"error": "Already voted"}), 409
+    if not active_election or not active_election.is_open:
+        return jsonify({"error": "Election is not open"}), 409
+
+    try:
+        locked_user, enrolment = lock_and_validate_voter(db, current_user.id)
+    except IneligibleVoterError:
+        current_app.logger.info(
+            "Rejected blind authorization for an ineligible voter."
+        )
+        db.session.rollback()
+        return jsonify({"error": "Not eligible to vote"}), 403
+
+    candidates = Candidate.query.filter_by(election_id=active_election.id).all()
+    region_ids = {candidate.region_id for candidate in candidates}
+    positions = {candidate.position for candidate in candidates}
+    if len(region_ids) != 1 or len(positions) != 1:
+        db.session.rollback()
+        return jsonify(
+            {"error": "Election is not a single-region, single-contest ballot"}
+        ), 409
+    if enrolment.region_id not in region_ids:
+        db.session.rollback()
+        return jsonify({"error": "Election is outside your enrolled region"}), 403
 
     try:
         blinded_int = int(data['blinded_ballot'], 16)
-        nonce_hash = data['nonce_hash']
     except (ValueError, TypeError):
         logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
         return jsonify({"error": "Invalid blinded_ballot format"}), 400
 
-    # Issue receipt + token
-    receipt = VoteReceipt(user_id=current_user.id)
-    token = BlindSignatureToken(
-        user_id=current_user.id,
-        ballot_nonce_hash=nonce_hash,
+    existing_token = (
+        BlindSignatureToken.query.filter_by(
+            user_id=locked_user.id,
+            election_id=active_election.id,
+        )
+        .with_for_update()
+        .first()
     )
-    db.session.add(receipt)
-    db.session.add(token)
-    locked_user.has_voted = True
+    existing_receipt = VoteReceipt.query.filter_by(
+        user_id=locked_user.id,
+        election_id=active_election.id,
+    ).first()
+
+    if existing_token:
+        return jsonify(
+            {"error": "A ballot authorization was already issued for this election"}
+        ), 409
+    if existing_receipt:
+        return jsonify({"error": "Already voted in this election"}), 409
+
+    try:
+        ensure_election_blind_signing_key(
+            current_app.instance_path,
+            active_election.id,
+            active_election.blind_signing_key_id,
+        )
+        blind_sig = blind_sign(
+            blinded_int,
+            current_app.instance_path,
+            active_election.id,
+        )
+    except (ValueError, TypeError):
+        current_app.logger.debug("Rejected invalid blinded ballot value", exc_info=True)
+        db.session.rollback()
+        return jsonify({"error": "Invalid blinded ballot value"}), 400
+    except BlindSigningKeyError:
+        db.session.rollback()
+        current_app.logger.error(
+            "The blind-signing key for election %s is unavailable.",
+            active_election.id,
+            exc_info=True,
+        )
+        return jsonify({"error": "Election signing key is unavailable"}), 503
+
+    # Store only the fact that one signature was issued. Do not store any
+    # ballot-derived value or cast state beside the voter's identity.
+    db.session.add(
+        BlindSignatureToken(
+            user_id=locked_user.id,
+            election_id=active_election.id,
+        )
+    )
 
     try:
         db.session.flush()
@@ -259,11 +369,18 @@ def request_blind_token():
         db.session.rollback()
         return jsonify({"error": "Already voted"}), 409
 
-    # Sign the blinded ballot
-    blind_sig = blind_sign(blinded_int, current_app.instance_path)
     db.session.commit()
+    record_audit_event(
+        actor_id=locked_user.id,
+        action='ballot_authorization.issue',
+        target_type='election',
+        target_id=active_election.id,
+    )
 
-    return jsonify({"blind_signature": hex(blind_sig)})
+    return jsonify({
+        "blind_signature": hex(blind_sig),
+        "election_id": active_election.id,
+    })
 
 
 @main.route('/vote/cast', methods=['POST'])
@@ -278,11 +395,19 @@ def cast_anonymous_ballot():
     import json as _json
     import secrets
     import hashlib
-    from app.models import Vote, BlindSignatureToken
-    from app.security.blind_signature import verify_unblinded_signature
+    from app.models import Election, SpentBallotNullifier, Vote
+    from app.security.blind_signature import (
+        BlindSigningKeyError,
+        ensure_election_blind_signing_key,
+        verify_unblinded_signature,
+    )
 
     data = request.get_json(silent=True)
-    if not data or 'ballot' not in data or 'signature' not in data:
+    if (
+        not isinstance(data, dict)
+        or 'ballot' not in data
+        or 'signature' not in data
+    ):
         return jsonify({"error": "Missing ballot or signature"}), 400
 
     try:
@@ -294,55 +419,124 @@ def cast_anonymous_ballot():
         logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
         return jsonify({"error": "Invalid ballot or signature format"}), 400
 
-    # Verify blind signature
-    if not verify_unblinded_signature(ballot_bytes, sig_int, current_app.instance_path):
-        return jsonify({"error": "Invalid signature"}), 403
-
-    # Extract ballot fields
-    candidate_id = ballot_json.get('candidate_id')
-    nonce = ballot_json.get('nonce')
-    if not candidate_id or not nonce:
+    if not isinstance(ballot_json, dict):
         return jsonify({"error": "Malformed ballot"}), 400
 
-    # Verify candidate exists
-    candidate = db.session.get(Candidate, candidate_id)
-    if not candidate:
-        return jsonify({"error": "Invalid candidate"}), 400
+    # Parse and validate the election before choosing a verification key. This
+    # ordering ensures an Election A authorization cannot become a ballot in B.
+    candidate_id = ballot_json.get('candidate_id')
+    election_id = ballot_json.get('election_id')
+    nonce = ballot_json.get('nonce')
+    if not candidate_id or not election_id or not nonce:
+        return jsonify({"error": "Malformed ballot"}), 400
+    try:
+        candidate_id = int(candidate_id)
+        election_id = int(election_id)
+    except (TypeError, ValueError):
+        current_app.logger.debug("Rejected non-integer ballot identifiers")
+        return jsonify({"error": "Malformed ballot"}), 400
+    if (
+        not isinstance(nonce, str)
+        or len(nonce) != 64
+        or any(ch not in "0123456789abcdef" for ch in nonce)
+    ):
+        return jsonify({"error": "Malformed ballot nullifier"}), 400
 
-    # Replay prevention: find and redeem the token via nonce hash
-    nonce_hash = hashlib.sha256(nonce.encode('utf-8')).hexdigest()
-    token = BlindSignatureToken.query.filter_by(
-        ballot_nonce_hash=nonce_hash,
-        redeemed=False,
+    election = (
+        db.session.query(Election)
+        .filter(Election.id == election_id)
+        .with_for_update(read=True)
+        .first()
+    )
+    if not election or not election.is_open:
+        return jsonify({"error": "Election is not open"}), 409
+
+    try:
+        ensure_election_blind_signing_key(
+            current_app.instance_path,
+            election.id,
+            election.blind_signing_key_id,
+        )
+        signature_valid = verify_unblinded_signature(
+            ballot_bytes,
+            sig_int,
+            current_app.instance_path,
+            election.id,
+        )
+    except BlindSigningKeyError:
+        current_app.logger.error(
+            "The blind-signing key for election %s is unavailable.",
+            election.id,
+            exc_info=True,
+        )
+        return jsonify({"error": "Election signing key is unavailable"}), 503
+    if not signature_valid:
+        return jsonify({"error": "Invalid signature"}), 403
+
+    # The database composite foreign key and this lookup both prevent a
+    # candidate from being submitted under another election.
+    candidate = Candidate.query.filter_by(
+        id=candidate_id,
+        election_id=election.id,
     ).first()
-    if not token:
-        return jsonify({"error": "Token already redeemed or invalid"}), 409
+    if not candidate:
+        return jsonify({"error": "Candidate is not in this election"}), 400
 
+    election_candidates = Candidate.query.filter_by(election_id=election.id).all()
+    if (
+        len({item.region_id for item in election_candidates}) != 1
+        or len({item.position for item in election_candidates}) != 1
+    ):
+        db.session.rollback()
+        return jsonify(
+            {"error": "Election is not a single-region, single-contest ballot"}
+        ), 409
+
+    # Replay prevention is identity-free. The signed ballot binds this nonce to
+    # the exact candidate and election; the unique nullifier blocks replays.
+    nonce_hash = hashlib.sha256(nonce.encode('utf-8')).hexdigest()
     from datetime import datetime, timezone
-    token.redeemed = True
-    token.redeemed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    spent_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Store anonymous ballot
     ballot_nonce = secrets.token_hex(32)
-    ts = datetime.now(timezone.utc).isoformat()
-    vote_hash = hashlib.sha256(f"{ballot_nonce}:{candidate_id}:{ts}".encode()).hexdigest()
+    ts = datetime.now(timezone.utc)
+    vote_hash = hashlib.sha256(
+        f"{ballot_nonce}:{election.id}:{candidate_id}:{ts.isoformat()}".encode()
+    ).hexdigest()
 
     vote = Vote(
         voter_token=ballot_nonce,
+        election_id=election.id,
         candidate_id=candidate_id,
         position=candidate.position,
         vote_hash=vote_hash,
-        created_at=datetime.now(timezone.utc),
+        created_at=ts.replace(tzinfo=None),
     )
-    db.session.add(vote)
+    db.session.add_all(
+        [
+            vote,
+            SpentBallotNullifier(
+                election_id=election.id,
+                nullifier_hash=nonce_hash,
+                spent_at=spent_at,
+            ),
+        ]
+    )
 
     try:
         db.session.commit()
     except IntegrityError:
         logging.getLogger(__name__).debug("Handled exception in app/routes/main.py", exc_info=True)
         db.session.rollback()
-        return jsonify({"error": "Vote could not be recorded"}), 500
+        return jsonify({"error": "Ballot was already submitted or is invalid"}), 409
 
+    record_audit_event(
+        actor_id=None,
+        action='ballot.cast',
+        target_type='election',
+        target_id=election.id,
+    )
     return jsonify({"status": "ok", "message": "Your anonymous ballot has been recorded."})
 
 
@@ -353,18 +547,40 @@ def results():
         flash_once('Access denied')
         return redirect(url_for('main.dashboard'))
 
-    from app.services.results_service import get_vote_tallies
+    from app.models import Election
+    from app.services.results_service import ResultsUnavailableError, get_vote_tallies
     from datetime import datetime, timezone
 
-    votes = get_vote_tallies()
-    total_votes = sum(votes.values())
+    elections = Election.query.order_by(Election.created_at.desc()).all()
+    requested_id = request.args.get("election_id", type=int)
+    selected_election = (
+        db.session.get(Election, requested_id)
+        if requested_id is not None
+        else next((e for e in elections if e.status == "closed"), None)
+        or next((e for e in elections if e.is_open), None)
+    )
+    if selected_election is None:
+        votes = {}
+    else:
+        try:
+            votes = get_vote_tallies(selected_election.id)
+        except ResultsUnavailableError:
+            current_app.logger.error(
+                "Results page unavailable for election %s",
+                selected_election.id,
+                exc_info=True,
+            )
+            abort(503, description="Authoritative election results are unavailable")
+    total_votes = sum(item["votes"] for item in votes)
 
     return render_template(
         'results.html',
         votes=votes,
         total_votes=total_votes,
         timestamp=datetime.now(timezone.utc),
-        admin_user=current_user.username
+        admin_user=current_user.username,
+        elections=elections,
+        selected_election=selected_election,
     )
 
 @main.errorhandler(403)

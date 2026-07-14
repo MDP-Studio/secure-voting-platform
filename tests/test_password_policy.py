@@ -15,11 +15,16 @@ from app.models import User, Role
 
 
 @pytest.fixture
-def app():
+def app(tmp_path, monkeypatch):
     """Create and configure a test Flask app."""
+    monkeypatch.setenv('DEPLOYMENT_ENV', 'testing')
+    monkeypatch.setenv('FLASK_ENV', 'testing')
     app = create_app({
         'TESTING': True,
-        'SQLALCHEMY_DATABASE_URI': 'sqlite:///:memory:',
+        # Request-aware admin/voter binds each create their own engine. A
+        # temporary file lets those engines exercise the same SQLite schema;
+        # separate :memory: engines would each see a different empty database.
+        'SQLALCHEMY_DATABASE_URI': f"sqlite:///{tmp_path / 'password-policy.db'}",
         'WTF_CSRF_ENABLED': False,
         'SECRET_KEY': 'test-secret-key-32-bytes-minimum-for-hs256',
         'ENABLE_MFA': False,  # Disable MFA for simpler testing

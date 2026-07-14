@@ -3,6 +3,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_required, current_user
 from app.models import User, ElectoralRoll
 from app import db
+from app.logging_service import record_audit_event
 from app.utils.auth_decorators import admin_only
 
 admin_bp = Blueprint('admin_users', __name__, url_prefix="/admin")
@@ -120,7 +121,13 @@ def manage_users():
 @login_required
 @admin_only
 def approve_user(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
+    if not user.email_verified:
+        flash(
+            f"User '{user.username}' must verify their email before approval.",
+            'error',
+        )
+        return redirect(url_for("admin_users.manage_users"))
     user.account_status = "approved"
     # Backwards-compatible: some code refers to user.status; set it too.
     user.status = "active"
@@ -131,6 +138,12 @@ def approve_user(user_id):
         enrol.status = 'active'
         enrol.verified = True
     db.session.commit()
+    record_audit_event(
+        actor_id=current_user.id,
+        action='user.approve',
+        target_type='user',
+        target_id=user.id,
+    )
     flash(f"✅ User '{user.username}' approved.")
     return redirect(url_for("admin_users.manage_users"))
 
@@ -138,10 +151,17 @@ def approve_user(user_id):
 @login_required
 @admin_only
 def reject_user(user_id):
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     user.account_status = "rejected"
     user.status = "rejected"
+    user.session_version += 1
     db.session.commit()
+    record_audit_event(
+        actor_id=current_user.id,
+        action='user.reject',
+        target_type='user',
+        target_id=user.id,
+    )
     flash(f"❌ User '{user.username}' rejected.")
     return redirect(url_for("admin_users.manage_users"))
 
@@ -150,7 +170,7 @@ def reject_user(user_id):
 @admin_only
 def unlock_user(user_id):
     """Manually unlock a locked user account."""
-    user = User.query.get_or_404(user_id)
+    user = db.get_or_404(User, user_id)
     user.failed_login_attempts = 0
     user.account_locked_until = None
     db.session.commit()
@@ -188,7 +208,6 @@ def manage_voters():
             db.or_(
                 User.username.ilike(search_pattern),
                 User.email.ilike(search_pattern),
-                ElectoralRoll.full_name.ilike(search_pattern),
                 ElectoralRoll.roll_number.ilike(search_pattern)
             )
         )

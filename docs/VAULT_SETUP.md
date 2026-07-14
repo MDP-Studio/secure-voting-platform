@@ -1,282 +1,127 @@
-# HashiCorp Vault Integration
+# Vault Transit setup
 
-This document describes the HashiCorp Vault integration for the secure voting system, which provides enhanced security for result signing and configuration management.
+SecureVote can sign closed-election result packages with HashiCorp Vault
+Transit. Each persisted signature records the Vault cluster, namespace, mount,
+key name, key version, algorithm, and complete signature envelope. Verification
+uses that stored provenance and never falls back to a local key when Vault was
+the signer.
 
-## Overview
+## Required identity
 
-The voting system now integrates with HashiCorp Vault to provide:
+Vault-backed signing requires all of the following:
 
-- **Result Signing**: Uses Vault's Transit engine for cryptographic signing of election results
-- **Key Management**: Centralized and secure key storage and rotation
-- **Configuration Management**: Secure storage of sensitive configuration values
-- **Audit Trail**: Comprehensive logging of all cryptographic operations
-
-## Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Voting Web    │    │   HashiCorp     │    │   MySQL DB      │
-│   Application   │◄──►│     Vault       │    │                 │
-│                 │    │                 │    │                 │
-│ - Result Signing│    │ - Transit Engine│    │ - Vote Storage  │
-│ - Configuration │    │ - KV Store      │    │ - User Data     │
-│ - Authentication│    │ - Policies      │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+```text
+VAULT_ADDR
+VAULT_CLUSTER_ID
+VAULT_MOUNT
+VAULT_TRANSIT_KEY
+VAULT_TOKEN or VAULT_TOKEN_FILE
 ```
 
-## Quick Start
+`VAULT_CLUSTER_ID` is a stable, non-secret identifier for the Vault deployment.
+It must remain unchanged for the lifetime of signatures produced by that
+cluster. Set `VAULT_NAMESPACE` when using Vault Enterprise namespaces.
 
-### 1. Start the System
-
-```bash
-# Start all services including Vault
-docker-compose up -d
-
-# Check that all services are running
-docker-compose ps
-```
-
-### 2. Initialize Vault
-
-```bash
-# Option 1: Use the Python script (recommended)
-python3 scripts/init_vault.py
-
-# Option 2: Use the shell script
-docker-compose exec vault /vault-init.sh
-```
-
-### 3. Verify Integration
-
-```bash
-# Check Vault status
-curl http://localhost:8200/v1/sys/health
-
-# Access Vault UI
-open http://localhost:8200
-# Login with token: vault-dev-token
-```
-
-## Vault Configuration
-
-### Environment Variables
-
-The web application is configured with the following Vault environment variables:
-
-```yaml
-VAULT_ADDR: "http://vault:8200"          # Vault server URL
-VAULT_TOKEN: "vault-dev-token"           # Authentication token
-VAULT_MOUNT: "transit"                   # Transit engine mount point
-VAULT_KV_MOUNT: "kv"                     # KV store mount point
-VAULT_TRANSIT_KEY: "results-signing"     # Transit key name
-```
-
-### Secrets Engines
-
-#### Transit Engine (`/transit`)
-
-Used for cryptographic operations:
-
-- **Key**: `results-signing` (RSA-2048)
-- **Purpose**: Sign and verify election results
-- **Operations**: 
-  - `transit/sign/results-signing` - Sign data
-  - `transit/verify/results-signing` - Verify signatures
-
-#### KV Store (`/kv`)
-
-Used for configuration management:
-
-- **Path**: `voting/config` - System configuration
-- **Path**: `voting/security` - Security settings
-- **Path**: `voting/keys/` - Migrated RSA keys (if any)
-
-## Usage Examples
-
-### Result Signing
-
-The application automatically uses Vault for result signing when available:
-
-```python
-from app.security.signing_service import sign_data, verify_signature
-
-# Sign election results
-results_data = b'{"candidate1": 100, "candidate2": 150}'
-signature = sign_data(results_data)
-
-# Verify signature
-is_valid = verify_signature(results_data, signature)
-```
-
-### Configuration Access
-
-Access configuration from Vault:
-
-```python
-from app.security.vault_client import vault_client
-
-# Get configuration values
-admin_email = vault_client.kv_get('voting/config', 'admin_email')
-max_attempts = vault_client.kv_get('voting/security', 'max_login_attempts')
-```
-
-## Security Features
-
-### 1. Key Management
-
-- **Centralized Storage**: All cryptographic keys stored in Vault
-- **Key Rotation**: Easy rotation of signing keys
-- **Access Control**: Fine-grained policies for key access
-- **Audit Logging**: All key operations are logged
-
-### 2. Policy-Based Access
-
-The voting system uses a dedicated policy:
+The application token needs only these capabilities for its configured key:
 
 ```hcl
-# Allow result signing
 path "transit/sign/results-signing" {
   capabilities = ["update"]
 }
 
-# Allow signature verification
 path "transit/verify/results-signing" {
   capabilities = ["update"]
 }
 
-# Allow configuration reading
-path "kv/data/voting/*" {
+path "transit/keys/results-signing" {
   capabilities = ["read"]
 }
 ```
 
-### 3. Fallback Security
+Do not give the web process a Vault root token.
 
-If Vault is unavailable, the system falls back to local RSA keys:
+## Local Compose workflow
 
-- Local keys are loaded from the instance folder
-- Same cryptographic strength (RSA-2048)
-- Seamless operation without Vault dependency
-
-## Development vs Production
-
-### Development Setup
-
-The current configuration uses Vault in development mode:
-
-- **Token**: `vault-dev-token` (hardcoded for convenience)
-- **Storage**: In-memory (data lost on restart)
-- **UI Access**: Available at http://localhost:8200
-
-### Production Considerations
-
-For production deployment:
-
-1. **Enable Vault UI**: Configure proper TLS certificates
-2. **Persistent Storage**: Use file or Consul backend
-3. **Token Management**: Use proper token lifecycle management
-4. **High Availability**: Deploy Vault cluster
-5. **Backup Strategy**: Regular backup of Vault data
-6. **Network Security**: Restrict Vault access to application only
-
-## Monitoring and Troubleshooting
-
-### Health Checks
+Copy `.env.example` to `.env` and fill every blank required secret. In
+particular, generate a random `VAULT_DEV_ROOT_TOKEN` of at least 16 characters;
+it is used only by the local dev Vault and the one-shot initializer.
 
 ```bash
-# Check Vault health
-curl http://localhost:8200/v1/sys/health
-
-# Check application logs
-docker-compose logs web | grep -i vault
-
-# Check Vault logs
-docker-compose logs vault
+docker compose up --build -d
+docker compose ps
+docker compose logs vault-init
 ```
 
-### Common Issues
+The local stack performs this sequence:
 
-1. **Vault Not Ready**: Wait for Vault to initialize (usually 10-30 seconds)
-2. **Authentication Failed**: Verify VAULT_TOKEN environment variable
-3. **Key Not Found**: Run the initialization script
-4. **Network Issues**: Ensure containers are on the same network
+1. `vault` starts in development mode on the internal application network.
+2. `vault-init` enables the configured Transit mount, creates the RSA signing
+   key and least-privilege policy, and writes a scoped token to a named volume.
+3. `web` mounts that token file read-only at `/run/vault/token`.
 
-### Debugging
-
-Enable debug logging:
+Vault has no host port mapping in this profile. Inspect it from inside its
+container when debugging:
 
 ```bash
-# Set debug level in docker-compose.yml
-LOG_LEVEL: debug
+docker compose exec vault vault status
+docker compose exec vault vault secrets list
 ```
 
-## Migration from Local Keys
-
-If you have existing RSA keys in the instance folder:
+Run the application-level checks inside the web container so they use its
+internal Vault address and read-only scoped token file:
 
 ```bash
-# The init script will automatically migrate them
-python3 scripts/init_vault.py --instance-path ./instance
-
-# Or manually migrate
-docker-compose exec web python3 -c "
-from app.security.vault_client import vault_client
-# Migration code here
-"
+docker compose exec web python scripts/vault_integration_check.py
+docker compose exec web python scripts/demo_vault_signing.py
 ```
 
-## API Reference
-
-### VaultClient Methods
-
-```python
-# Check if Vault is enabled
-vault_client.is_enabled
-
-# Sign data using transit engine
-signature = vault_client.transit_sign('results-signing', data)
-
-# Verify signature
-is_valid = vault_client.transit_verify('results-signing', data, signature)
-
-# Get configuration value
-value = vault_client.kv_get('voting/config', 'admin_email')
-```
-
-## Security Best Practices
-
-1. **Token Security**: Never commit tokens to version control
-2. **Network Isolation**: Use private networks for Vault communication
-3. **Regular Rotation**: Rotate tokens and keys regularly
-4. **Audit Monitoring**: Monitor Vault audit logs
-5. **Backup Strategy**: Regular backup of Vault data and policies
-6. **Access Control**: Use least-privilege principles for policies
-
-## Troubleshooting Commands
+The generated web token has a seven-day development TTL. Recreate the
+`vault-init` service before it expires:
 
 ```bash
-# Restart Vault
-docker-compose restart vault
-
-# Reinitialize Vault
-docker-compose exec vault vault operator init
-
-# Check Vault status
-docker-compose exec vault vault status
-
-# List secrets engines
-docker-compose exec vault vault secrets list
-
-# Test authentication
-docker-compose exec vault vault auth -method=token token=vault-dev-token
+docker compose up --force-recreate vault-init
+docker compose restart web
 ```
 
-## Support
+This workflow is for local infrastructure verification. It is not a production
+Vault deployment.
 
-For issues related to Vault integration:
+## External Vault
 
-1. Check the application logs: `docker-compose logs web`
-2. Check Vault logs: `docker-compose logs vault`
-3. Verify Vault health: `curl http://localhost:8200/v1/sys/health`
-4. Review this documentation
-5. Check the Vault UI at http://localhost:8200
+For a real deployment:
+
+1. Use an initialized, unsealed, TLS-protected Vault cluster outside this
+   Compose file.
+2. Enable Transit and create a dedicated asymmetric signing key.
+3. Issue a renewable workload identity with only the policy above. Prefer an
+   orchestrator-managed secret file and set `VAULT_TOKEN_FILE`.
+4. Set a stable `VAULT_CLUSTER_ID` and the exact namespace, mount, and key name.
+5. Remove the local `vault` and `vault-init` services from the deployment.
+6. Monitor token renewal, key rotation, audit-device health, and Vault
+   availability.
+
+Example environment:
+
+```text
+VAULT_ADDR=https://vault.example.internal
+VAULT_TOKEN_FILE=/run/secrets/securevote-vault-token
+VAULT_CLUSTER_ID=au-prod-vault-01
+VAULT_NAMESPACE=elections
+VAULT_MOUNT=transit
+VAULT_TRANSIT_KEY=results-signing
+```
+
+## Rotation and verification
+
+Vault Transit signatures contain their key version. SecureVote preserves the
+complete `vault:vN:...` envelope and submits it unchanged during verification.
+Do not trim the version prefix or re-encode the signature.
+
+Local RSA fallback keys are different: their public keys are archived in
+`result_signing_public_key` with a SHA-256 fingerprint. Historical verification
+uses that immutable database archive, not the current runtime key file.
+
+If Vault is configured but unavailable, result signing and Vault-backed
+verification fail closed. Diagnose the token source, cluster identity, Transit
+mount, key name, and network path rather than switching an existing result to a
+different backend.

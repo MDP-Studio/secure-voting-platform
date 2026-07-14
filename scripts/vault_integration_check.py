@@ -1,205 +1,132 @@
 #!/usr/bin/env python3
-"""
-Test script to verify Vault integration with the voting system.
-"""
+"""Check an explicitly configured Vault and SecureVote signing integration."""
 
+import base64
 import os
 import sys
-import time
-import requests
 from pathlib import Path
 
-# Add the app directory to the path
-sys.path.insert(0, str(Path(__file__).parent.parent / "app"))
+import requests
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+
+def _read_token():
+    token = os.environ.get("VAULT_TOKEN")
+    token_file = os.environ.get("VAULT_TOKEN_FILE")
+    if token and token_file:
+        raise RuntimeError("Set only one of VAULT_TOKEN or VAULT_TOKEN_FILE")
+    if token:
+        return token
+    if token_file:
+        path = Path(token_file)
+        if not path.is_file() or path.stat().st_size > 4096:
+            raise RuntimeError("VAULT_TOKEN_FILE is missing or invalid")
+        token = path.read_text(encoding="utf-8").strip()
+        if token:
+            return token
+    raise RuntimeError("VAULT_TOKEN or VAULT_TOKEN_FILE is required")
+
+
+def _require_vault_configuration():
+    required = ("VAULT_ADDR", "VAULT_CLUSTER_ID", "VAULT_MOUNT", "VAULT_TRANSIT_KEY")
+    missing = [name for name in required if not os.environ.get(name)]
+    if missing:
+        raise RuntimeError("Missing Vault configuration: " + ", ".join(missing))
+    _read_token()
+
 
 def test_vault_connectivity():
-    """Test basic Vault connectivity."""
-    print("Testing Vault connectivity...")
-    
     try:
-        response = requests.get("http://localhost:8200/v1/sys/health", timeout=5)
-        if response.status_code == 200:
-            print("✓ Vault is accessible")
-            return True
-        else:
-            print(f"✗ Vault returned status {response.status_code}")
-            return False
-    except requests.exceptions.RequestException as e:
-        print(f"✗ Cannot connect to Vault: {e}")
+        response = requests.get(
+            os.environ["VAULT_ADDR"].rstrip("/") + "/v1/sys/health",
+            timeout=5,
+        )
+        return response.status_code in {200, 429, 472, 473}
+    except requests.RequestException as exc:
+        print(f"Vault health request failed: {exc}", file=sys.stderr)
         return False
 
-def test_vault_authentication():
-    """Test Vault authentication."""
-    print("Testing Vault authentication...")
-    
-    try:
-        import hvac
-        client = hvac.Client(url="http://localhost:8200", token="vault-dev-token")
-        
-        if client.is_authenticated():
-            print("✓ Vault authentication successful")
-            return True
-        else:
-            print("✗ Vault authentication failed")
-            return False
-    except ImportError:
-        print("✗ hvac library not installed")
-        return False
-    except Exception as e:
-        print(f"✗ Authentication error: {e}")
-        return False
 
 def test_transit_engine():
-    """Test transit engine functionality."""
-    print("Testing transit engine...")
-    
     try:
         import hvac
-        client = hvac.Client(url="http://localhost:8200", token="vault-dev-token")
-        
-        # Test signing
-        test_data = b"test data for signing"
-        response = client.secrets.transit.sign_data(
-            name='results-signing',
-            hash_algorithm='sha2-256',
-            input=test_data.hex()
+
+        client = hvac.Client(
+            url=os.environ["VAULT_ADDR"],
+            token=_read_token(),
+            namespace=os.environ.get("VAULT_NAMESPACE") or None,
         )
-        
-        if 'data' in response and 'signature' in response['data']:
-            print("✓ Transit signing works")
-            
-            # Test verification
-            signature = response['data']['signature']
-            verify_response = client.secrets.transit.verify_signed_data(
-                name='results-signing',
-                hash_algorithm='sha2-256',
-                input=test_data.hex(),
-                signature=signature
-            )
-            
-            if verify_response['data']['valid']:
-                print("✓ Transit verification works")
-                return True
-            else:
-                print("✗ Transit verification failed")
-                return False
-        else:
-            print("✗ Transit signing failed")
+        if not client.is_authenticated():
             return False
-            
-    except Exception as e:
-        print(f"✗ Transit engine error: {e}")
+        data = b"securevote transit integration check"
+        encoded = base64.b64encode(data).decode("ascii")
+        signed = client.secrets.transit.sign_data(
+            name=os.environ["VAULT_TRANSIT_KEY"],
+            input=encoded,
+            hash_algorithm="sha2-256",
+            signature_algorithm="pss",
+            salt_length="auto",
+            mount_point=os.environ["VAULT_MOUNT"],
+        )
+        envelope = signed["data"]["signature"]
+        verified = client.secrets.transit.verify_signed_data(
+            name=os.environ["VAULT_TRANSIT_KEY"],
+            input=encoded,
+            signature=envelope,
+            hash_algorithm="sha2-256",
+            signature_algorithm="pss",
+            salt_length="auto",
+            mount_point=os.environ["VAULT_MOUNT"],
+        )
+        return bool(verified["data"].get("valid"))
+    except Exception as exc:
+        print(f"Vault Transit check failed: {exc}", file=sys.stderr)
         return False
 
-def test_kv_store():
-    """Test KV store functionality."""
-    print("Testing KV store...")
-    
-    try:
-        import hvac
-        client = hvac.Client(url="http://localhost:8200", token="vault-dev-token")
-        
-        # Test reading configuration
-        response = client.secrets.kv.v2.read_secret_version(
-            path='voting/config',
-            mount_point='kv'
-        )
-        
-        if 'data' in response and 'data' in response['data']:
-            config = response['data']['data']
-            if 'admin_email' in config:
-                print("✓ KV store reading works")
-                return True
-            else:
-                print("✗ KV store data incomplete")
-                return False
-        else:
-            print("✗ KV store read failed")
-            return False
-            
-    except Exception as e:
-        print(f"✗ KV store error: {e}")
-        return False
 
 def test_voting_integration():
-    """Test the voting system's Vault integration."""
-    print("Testing voting system integration...")
-    
     try:
-        # Set up environment for testing
-        os.environ['VAULT_ADDR'] = 'http://localhost:8200'
-        os.environ['VAULT_TOKEN'] = 'vault-dev-token'
-        os.environ['VAULT_MOUNT'] = 'transit'
-        os.environ['VAULT_KV_MOUNT'] = 'kv'
-        os.environ['VAULT_TRANSIT_KEY'] = 'results-signing'
-        
-        from app.security.vault_client import vault_client
+        from app import create_app
         from app.security.signing_service import sign_data, verify_signature
-        
-        # Test if Vault client is enabled
+        from app.security.vault_client import vault_client
+
         if not vault_client.is_enabled:
-            print("✗ Vault client not enabled")
             return False
-        
-        print("✓ Vault client is enabled")
-        
-        # Test signing through the voting system
-        test_data = b"election results test data"
-        signature = sign_data(test_data)
-        
-        if signature:
-            print("✓ Voting system signing works")
-            
-            # Test verification
-            is_valid = verify_signature(test_data, signature)
-            if is_valid:
-                print("✓ Voting system verification works")
-                return True
-            else:
-                print("✗ Voting system verification failed")
-                return False
-        else:
-            print("✗ Voting system signing failed")
-            return False
-            
-    except Exception as e:
-        print(f"✗ Voting system integration error: {e}")
+        application = create_app()
+        data = b"election results integration check"
+        with application.app_context():
+            signed = sign_data(data)
+            return verify_signature(
+                data,
+                signed.signature,
+                signer_backend=signed.signer_backend,
+                signature_algorithm=signed.signature_algorithm,
+                signing_key_id=signed.signing_key_id,
+                signing_key_version=signed.signing_key_version,
+                public_key_pem=signed.public_key_pem,
+            )
+    except Exception as exc:
+        print(f"SecureVote Vault integration failed: {exc}", file=sys.stderr)
         return False
 
-def main():
-    """Run all Vault integration tests."""
-    print("Vault Integration Test Suite")
-    print("=" * 40)
-    
-    tests = [
-        test_vault_connectivity,
-        test_vault_authentication,
-        test_transit_engine,
-        test_kv_store,
-        test_voting_integration
-    ]
-    
-    passed = 0
-    total = len(tests)
-    
-    for test in tests:
-        try:
-            if test():
-                passed += 1
-            print()  # Add spacing between tests
-        except Exception as e:
-            print(f"✗ Test failed with exception: {e}")
-            print()
-    
-    print("=" * 40)
-    print(f"Test Results: {passed}/{total} tests passed")
-    
-    if passed == total:
-        print("🎉 All tests passed! Vault integration is working correctly.")
-        return 0
-    else:
-        print("❌ Some tests failed. Check the output above for details.")
-        return 1
 
-if __name__ == '__main__':
-    sys.exit(main())
+def main():
+    try:
+        _require_vault_configuration()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    checks = {
+        "Vault health": test_vault_connectivity(),
+        "Transit sign/verify": test_transit_engine(),
+        "SecureVote signing API": test_voting_integration(),
+    }
+    for label, passed in checks.items():
+        print(f"{'PASS' if passed else 'FAIL'}: {label}")
+    return 0 if all(checks.values()) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

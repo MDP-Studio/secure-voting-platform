@@ -18,6 +18,8 @@ import os
 import argparse
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 def update_env_file(enable_test_voters):
     """Update the .env file to enable or disable test voter creation."""
     env_file = Path('.env')
@@ -89,6 +91,7 @@ def reset_database():
     
     # Run the database initialization
     try:
+        os.environ['ALLOW_DEMO_SEED'] = 'true'
         from app import create_app
         from app.init_db import init_database
         

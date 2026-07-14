@@ -16,17 +16,22 @@
                  placeholder="e.g. Federal Election 2025" required>
         </div>
         <div class="col-md-3">
-          <label for="open_at" class="form-label">Opens At (optional)</label>
-          <input type="datetime-local" class="form-control" id="open_at" name="open_at">
+          <label for="open_at" class="form-label">Opens At (UTC, optional)</label>
+          <input type="datetime-local" class="form-control" id="open_at" name="open_at"
+                 aria-describedby="schedule-timezone-help">
         </div>
         <div class="col-md-3">
-          <label for="close_at" class="form-label">Closes At (optional)</label>
-          <input type="datetime-local" class="form-control" id="close_at" name="close_at">
+          <label for="close_at" class="form-label">Closes At (UTC, optional)</label>
+          <input type="datetime-local" class="form-control" id="close_at" name="close_at"
+                 aria-describedby="schedule-timezone-help">
         </div>
         <div class="col-md-2 d-flex align-items-end">
           <button type="submit" class="btn btn-primary w-100">
             <i class="fas fa-plus me-1"></i> Create
           </button>
+        </div>
+        <div class="col-12 form-text" id="schedule-timezone-help">
+          Enter election schedule times in UTC. Your browser does not add a timezone to these fields.
         </div>
       </form>
     </div>
@@ -40,8 +45,8 @@
         <tr>
           <th>Election</th>
           <th>Status</th>
-          <th>Opens</th>
-          <th>Closes</th>
+          <th>Opens (UTC)</th>
+          <th>Closes (UTC)</th>
           <th>Created</th>
           <th>Actions</th>
         </tr>

@@ -12,7 +12,7 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
     """Create and configure a test app instance."""
     # Create a temporary database for testing
     db_fd, db_path = tempfile.mkstemp()
@@ -20,7 +20,9 @@ def app():
     # Set a consistent encryption key for testing to ensure reproducible results
     # This key is only used in tests and should never be used in production
     test_encryption_key = "SdJcGfF7m2Kly1lpi/53LOineNBCJz9FFiJWM4GNUDg="  # 32-byte key for ChaCha20Poly1305
-    os.environ['VOTER_PII_KEY_BASE64'] = test_encryption_key
+    monkeypatch.setenv('DEPLOYMENT_ENV', 'testing')
+    monkeypatch.setenv('FLASK_ENV', 'testing')
+    monkeypatch.setenv('VOTER_PII_KEY_BASE64', test_encryption_key)
 
     app = create_app({
         'TESTING': True,
@@ -28,12 +30,16 @@ def app():
         'SECRET_KEY': 'test-secret-key-32-bytes-minimum-for-hs256',
         'WTF_CSRF_ENABLED': False,  # Disable CSRF for testing
         'ENABLE_MFA': False,  # Disable MFA for testing
+        'MAIL_SUPPRESS_SEND': True,
+        'MAIL_DEFAULT_SENDER': 'securevote-tests@example.invalid',
+        'PUBLIC_BASE_URL': 'http://localhost',
+        'TRUSTED_HOSTS': ['localhost', '127.0.0.1'],
     })
 
     with app.app_context():
         db.create_all()
         # Create test data
-        _create_test_data()
+        _create_test_data(app.instance_path)
 
     yield app
 
@@ -61,7 +67,7 @@ def runner(app):
     return app.test_cli_runner()
 
 
-def _create_test_data():
+def _create_test_data(instance_path):
     """Create test data for smoke tests."""
     # Create roles
     voter_role = Role(name='voter', description='Regular voter')
@@ -78,10 +84,11 @@ def _create_test_data():
     # Create admin user (matching init_db.py)
     admin = User(
         username='admin',
-        email='admin@voting.com',
+        email='admin@securevote.example.invalid',
         driver_lic_no='DL123458',  # Valid driver license (checksum: 8)
         driver_lic_state='NSW',
-        account_status='approved'  # Admin is pre-approved
+        account_status='approved',  # Admin is pre-approved
+        email_verified=True,
     )
     admin.role_id = manager_role.id
     admin.set_password('Admin@123456!')
@@ -93,7 +100,8 @@ def _create_test_data():
         email='voter1@email.com',
         driver_lic_no='VIC00014',  # Valid driver license (checksum: 4)
         driver_lic_state='VIC',
-        account_status='approved'  # Voter is pre-approved for testing
+        account_status='approved',  # Voter is pre-approved for testing
+        email_verified=True,
     )
     voter1.role_id = voter_role.id
     voter1.set_password('Password@123!')
@@ -117,16 +125,30 @@ def _create_test_data():
     )
     db.session.add(enrolment)
     
+    # Create an open election so voting tests work. Candidates are always
+    # scoped to an election and cannot be reused across election boundaries.
+    election = Election(name='Test Election', status='open')
+    db.session.add(election)
+    db.session.flush()
+
     # Create sample candidates (matching init_db.py)
     candidates = [
-        Candidate(name='John Smith', party='Labor Party', position='House of Representatives', region=default_region),
-        Candidate(name='Sarah Johnson', party='Liberal Party', position='House of Representatives', region=default_region),
-        Candidate(name='Mike Brown', party='Greens', position='House of Representatives', region=default_region),
+        Candidate(name='John Smith', party='Labor Party', position='House of Representatives', region=default_region, election=election),
+        Candidate(name='Sarah Johnson', party='Liberal Party', position='House of Representatives', region=default_region, election=election),
+        Candidate(name='Mike Brown', party='Greens', position='House of Representatives', region=default_region, election=election),
     ]
     db.session.add_all(candidates)
 
-    # Create an open election so voting tests work
-    election = Election(name='Test Election', status='open')
-    db.session.add(election)
+    db.session.commit()
+    from app.security.blind_signature import (
+        ensure_election_blind_signing_key,
+    )
 
+    key_components = ensure_election_blind_signing_key(
+        instance_path,
+        election.id,
+        None,
+        allow_create=True,
+    )
+    election.blind_signing_key_id = key_components["key_id"]
     db.session.commit()

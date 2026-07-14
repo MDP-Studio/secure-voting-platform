@@ -10,6 +10,40 @@ from datetime import datetime, timezone
 from typing import Optional, Tuple, List
 
 
+AUDIT_HANDLER_NAME = 'hmac_audit'
+AUDIT_LOGGER_NAME = 'securevote.audit'
+
+
+def record_audit_event(
+    *,
+    actor_id,
+    action: str,
+    target_type: str,
+    target_id,
+    outcome: str = 'success',
+) -> None:
+    """Record a privacy-minimal structured security action.
+
+    Callers must invoke this only after the related database commit succeeds.
+    Identifiers are normalized to strings so every event remains JSON serializable.
+    """
+    event = {
+        'actor': {
+            'id': 'anonymous' if actor_id is None else str(actor_id),
+        },
+        'action': str(action),
+        'target': {
+            'type': str(target_type),
+            'id': str(target_id),
+        },
+        'outcome': str(outcome),
+    }
+    logging.getLogger(AUDIT_LOGGER_NAME).info(
+        'security_action',
+        extra={'extra': event},
+    )
+
+
 @contextmanager
 def _exclusive_file_lock(lock_file):
     """Apply an exclusive advisory lock on Unix and Windows."""
@@ -83,7 +117,7 @@ class HmacAuditHandler(logging.Handler):
         try:
             msg = self.format(record)
             payload = {
-                'timestamp': datetime.now(timezone.utc).isoformat() + 'Z',
+                'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
                 'level': record.levelname,
                 'logger': record.name,
                 'message': msg,
@@ -145,24 +179,34 @@ def init_audit_logging(app) -> None:
     path = app.config.get('AUDIT_LOG_PATH') or os.path.join(app.instance_path, 'audit.log')
     key = app.config.get('AUDIT_HMAC_KEY') or os.environ.get('AUDIT_HMAC_KEY')
     if not key:
-        app.logger.warning('AUDIT_HMAC_KEY not set; audit logs will not be HMAC protected.')
-        key_bytes = b'dev-key'
+        if not app.config.get('TESTING'):
+            raise RuntimeError('AUDIT_HMAC_KEY is required outside test mode')
+        key_bytes = b'test-only-audit-hmac-key-32-bytes'
     else:
         key_bytes = key.encode('utf-8')
 
     handler = HmacAuditHandler(path=path, key=key_bytes, level=logging.INFO)
     # Use a simple formatter (message already included); keep handler name
     handler.setFormatter(logging.Formatter('%(message)s'))
-    handler.name = 'hmac_audit'
+    handler.name = AUDIT_HANDLER_NAME
 
     root = logging.getLogger('')
-    # Avoid duplicate handler addition
-    if not any(getattr(h, 'name', None) == handler.name for h in root.handlers):
-        root.addHandler(handler)
+    audit_logger = logging.getLogger(AUDIT_LOGGER_NAME)
+    stale_handlers = set()
+    for logger in (root, app.logger, audit_logger):
+        for existing in list(logger.handlers):
+            if getattr(existing, 'name', None) == AUDIT_HANDLER_NAME:
+                logger.removeHandler(existing)
+                stale_handlers.add(existing)
+    for existing in stale_handlers:
+        existing.close()
 
-    # Also attach to the flask app logger
-    if not any(getattr(h, 'name', None) == handler.name for h in app.logger.handlers):
-        app.logger.addHandler(handler)
+    # Only the dedicated structured-event logger enters the HMAC chain.
+    # Operational request logs stay in the application log so IP/timing data
+    # cannot silently turn the ballot audit trail into a correlation channel.
+    audit_logger.addHandler(handler)
+    audit_logger.setLevel(logging.INFO)
+    audit_logger.propagate = False
 
 
 def seal_log(file_path: str) -> Optional[str]:

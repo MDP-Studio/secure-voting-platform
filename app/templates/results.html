@@ -3,7 +3,12 @@
 
 {% block content %}
 <div class="sv-page-header">
-  <h2><i class="fas fa-chart-bar me-2"></i>Election Results</h2>
+  <div>
+    <h2><i class="fas fa-chart-bar me-2"></i>Election Results</h2>
+    {% if selected_election %}
+      <p class="text-muted mb-0">{{ selected_election.name }} ({{ selected_election.status|title }})</p>
+    {% endif %}
+  </div>
   <div class="d-flex align-items-center gap-3">
     <span class="text-muted" style="font-size:.8rem">
       {{ timestamp.strftime('%d %b %Y %H:%M UTC') }} &middot; {{ total_votes }} votes
@@ -11,22 +16,43 @@
   </div>
 </div>
 
+{% if elections %}
+<form method="get" action="{{ url_for('main.results') }}" class="sv-card mb-4">
+  <div class="card-body d-flex align-items-end gap-3">
+    <div class="flex-grow-1">
+      <label for="results-election" class="form-label">Election</label>
+      <select id="results-election" name="election_id" class="form-select">
+        {% for election in elections %}
+          <option value="{{ election.id }}" {% if selected_election and election.id == selected_election.id %}selected{% endif %}>
+            {{ election.name }} ({{ election.status|title }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">View results</button>
+  </div>
+</form>
+{% endif %}
+
 {% if votes %}
 <!-- Bar Chart (pure CSS) -->
 <div class="sv-card mb-4">
   <div class="card-body">
-    {% set max_votes = votes.values()|max if votes.values()|list else 1 %}
-    {% for candidate, count in votes.items() %}
+    {% set max_votes = votes|map(attribute='votes')|max %}
+    {% for result in votes %}
     <div class="d-flex align-items-center mb-3">
-      <div style="width:140px; flex-shrink:0; font-size:.875rem; font-weight:500">{{ candidate }}</div>
+      <div style="width:180px; flex-shrink:0; font-size:.875rem; font-weight:500">
+        {{ result.name }}
+        <small class="d-block text-muted">{{ result.position }}, {{ result.region }}</small>
+      </div>
       <div class="flex-grow-1 mx-3">
         <div style="background:#f1f5f9; border-radius:6px; overflow:hidden; height:28px">
-          {% set pct = (count / total_votes * 100) if total_votes > 0 else 0 %}
-          <div style="width:{{ (count / max_votes * 100) if max_votes > 0 else 0 }}%; background:var(--sv-primary); height:100%; border-radius:6px; transition:width .5s; min-width:2px"></div>
+          {% set pct = (result.votes / total_votes * 100) if total_votes > 0 else 0 %}
+          <div style="width:{{ (result.votes / max_votes * 100) if max_votes > 0 else 0 }}%; background:var(--sv-primary); height:100%; border-radius:6px; transition:width .5s; min-width:2px"></div>
         </div>
       </div>
       <div style="width:90px; flex-shrink:0; text-align:right; font-size:.875rem">
-        <strong>{{ count }}</strong>
+        <strong>{{ result.votes }}</strong>
         <span class="text-muted">({{ "%.1f"|format(pct) }}%)</span>
       </div>
     </div>
@@ -40,22 +66,24 @@
     <thead>
       <tr>
         <th>Candidate</th>
+        <th>Position / region</th>
         <th>Votes</th>
         <th>Percentage</th>
       </tr>
     </thead>
     <tbody>
-      {% for candidate, count in votes.items() %}
+      {% for result in votes %}
       <tr>
-        <td><strong>{{ candidate }}</strong></td>
-        <td>{{ count }}</td>
-        <td>{{ "%.1f"|format((count / total_votes * 100) if total_votes > 0 else 0) }}%</td>
+        <td><strong>{{ result.name }}</strong></td>
+        <td>{{ result.position }} / {{ result.region }}</td>
+        <td>{{ result.votes }}</td>
+        <td>{{ "%.1f"|format((result.votes / total_votes * 100) if total_votes > 0 else 0) }}%</td>
       </tr>
       {% endfor %}
     </tbody>
     <tfoot>
       <tr style="font-weight:600; background:var(--sv-bg)">
-        <td>Total</td>
+        <td colspan="2">Total</td>
         <td>{{ total_votes }}</td>
         <td>100%</td>
       </tr>

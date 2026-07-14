@@ -29,8 +29,9 @@ def check_geo_ip():
         return
 
     # 3. Get the user's real IP address.
-    forwarded_for = request.headers.get('X-Forwarded-For')
-    user_ip = forwarded_for.split(',')[0].strip() if forwarded_for else request.remote_addr
+    # ProxyFix consumes exactly one trusted proxy hop and exposes the selected
+    # address as remote_addr. Client-prepended XFF values are not authoritative.
+    user_ip = request.remote_addr
     
     # 4. Use the service to check the IP.
     if not geoip_service.is_ip_allowed(user_ip):

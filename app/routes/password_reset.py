@@ -10,7 +10,7 @@ from app import db, mail
 from app.models import User
 from app.security.password_validator import validate_password_strength
 from flask_mail import Message
-from datetime import datetime, timezone
+from app.utils.public_url import public_url_for
 
 password_reset_bp = Blueprint('password_reset', __name__)
 
@@ -25,9 +25,9 @@ def _get_serializer():
 def _send_reset_email(user):
     """Generate a reset token and send the reset email."""
     s = _get_serializer()
-    token = s.dumps(user.email)
+    token = s.dumps({"uid": user.id, "ver": user.session_version})
 
-    reset_url = url_for('password_reset.reset_password', token=token, _external=True)
+    reset_url = public_url_for('password_reset.reset_password', token=token)
 
     try:
         msg = Message(
@@ -71,7 +71,7 @@ def reset_password(token):
     s = _get_serializer()
 
     try:
-        email = s.loads(token, max_age=TOKEN_MAX_AGE)
+        token_data = s.loads(token, max_age=TOKEN_MAX_AGE)
     except SignatureExpired:
         logging.getLogger(__name__).debug("Handled exception in app/routes/password_reset.py", exc_info=True)
         flash('This reset link has expired. Please request a new one.', 'error')
@@ -81,14 +81,28 @@ def reset_password(token):
         flash('Invalid reset link.', 'error')
         return redirect(url_for('password_reset.forgot_password'))
 
-    user = User.query.filter_by(email=email).first()
-    if not user:
+    if not isinstance(token_data, dict):
+        flash('Invalid reset link.', 'error')
+        return redirect(url_for('password_reset.forgot_password'))
+    user_id = token_data.get("uid")
+    token_version = token_data.get("ver")
+    if (
+        isinstance(user_id, bool)
+        or not isinstance(user_id, int)
+        or isinstance(token_version, bool)
+        or not isinstance(token_version, int)
+    ):
+        flash('Invalid reset link.', 'error')
+        return redirect(url_for('password_reset.forgot_password'))
+
+    user = db.session.get(User, user_id)
+    if not user or user.session_version != token_version:
         flash('Invalid reset link.', 'error')
         return redirect(url_for('password_reset.forgot_password'))
 
     if request.method == 'POST':
-        new_password = request.form.get('new_password', '').strip()
-        confirm_password = request.form.get('confirm_password', '').strip()
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
 
         if not new_password or not confirm_password:
             flash('All fields are required.', 'error')
@@ -103,8 +117,20 @@ def reset_password(token):
             flash(f'Password too weak: {error_message}', 'error')
             return render_template('reset_password.html', token=token)
 
+        # Re-lock and re-check the version at mutation time so concurrent or
+        # replayed requests cannot both consume the same reset authorization.
+        user = (
+            db.session.query(User)
+            .filter(User.id == user_id)
+            .populate_existing()
+            .with_for_update()
+            .first()
+        )
+        if user is None or user.session_version != token_version:
+            db.session.rollback()
+            flash('Invalid reset link.', 'error')
+            return redirect(url_for('password_reset.forgot_password'))
         user.set_password(new_password)
-        user.password_changed_at = datetime.now(timezone.utc)
         # Also unlock the account if it was locked
         user.failed_login_attempts = 0
         user.account_locked_until = None

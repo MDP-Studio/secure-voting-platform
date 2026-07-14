@@ -21,7 +21,7 @@
       <div class="card-header">Assets and Trust Boundaries</div>
       <div class="card-body">
         <ul class="mb-0">
-          <li>Voter identity, enrolment status, and encrypted PII stay in authenticated application flows.</li>
+          <li>Voter identity and enrolment stay in authenticated flows; driver licence, electoral-roll name, address, suburb, state, and postcode fields are encrypted at rest.</li>
           <li>Ballot authorization is separated from anonymous ballot submission through blind signatures.</li>
           <li>Manager results, audit logs, and election administration are role-gated.</li>
           <li>Vault transit signing is the preferred production-style result-signing boundary when configured.</li>
@@ -53,8 +53,10 @@
       <div class="card-body">
         <ul class="mb-0">
           <li>RSA blind signatures, browser-side unblinding, and a cookie-free anonymous ballot endpoint.</li>
-          <li>Transactional vote receipts, row locking, and a unique voter receipt constraint.</li>
-          <li>ChaCha20-Poly1305 PII encryption and HMAC blind indexes for driver licence lookup.</li>
+          <li>Election-scoped candidates, ballots, one-time identity-separated authorizations, identity-free spent nullifiers, and immutable rosters after opening.</li>
+          <li>Locked voter and enrolment revalidation, one blind authorization per voter and election, identity-free spent-nullifier replay prevention, and database uniqueness constraints.</li>
+          <li>Immutable signed results with durable backend, algorithm, key identifier, and Vault key-version provenance.</li>
+          <li>Versioned ChaCha20-Poly1305 envelopes protect driver licence, electoral-roll name, address, suburb, state, and postcode fields and fail closed on malformed, tampered, or wrong-key values, with HMAC blind indexes for driver licence lookup.</li>
           <li>Password policy, email OTP MFA, account lockout, anti-bot login nonce, honeypot, and Origin checks.</li>
           <li>HMAC-chained JSONL audit logs plus manager-visible chain verification.</li>
           <li>Environment detection that blocks developer controls and test seeding in production-like settings.</li>
@@ -71,7 +73,10 @@
           <li>This is not a certified, audited, or production election service.</li>
           <li>No public internet election should rely on this prototype without independent security review.</li>
           <li>Endpoint behavior, availability, coercion resistance, client compromise, and operational monitoring need more evidence.</li>
-          <li>Vault fallback keys are for local development and must not be treated as production signing custody.</li>
+          <li>Local RSA signing is a development mode only. If Vault is selected but unavailable, result signing fails closed.</li>
+          <li>The prototype supports one region and one contest per election; blind authorization loss is unrecoverable without a governed recovery protocol.</li>
+          <li>Identity-free storage does not remove network metadata or small-anonymity-set timing correlation.</li>
+          <li>Email, electoral-roll date of birth, user licence state, enrolment status, and operational metadata remain plaintext in the database and require strict access control and data minimization.</li>
           <li>Audit chains and signed results improve tamper evidence but do not replace independent election governance.</li>
         </ul>
       </div>
@@ -101,7 +106,7 @@
           </tr>
           <tr>
             <td>Double-vote prevention</td>
-            <td><code>app/vote_service.py</code>, <code>migrations/versions/20251005_add_uq_vote_user.py</code>, <code>tests/test_vote_concurrency.py</code></td>
+            <td><code>app/vote_service.py</code>, <code>migrations/versions/20260714_election_scope.py</code>, <code>tests/test_election_integrity.py</code>, <code>tests/test_vote_concurrency.py</code></td>
           </tr>
           <tr>
             <td>Production safety gates</td>

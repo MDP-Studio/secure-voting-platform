@@ -70,28 +70,37 @@
         <strong>Add Candidate</strong>
       </div>
       <div class="card-body">
+        {% if draft_elections %}
         <form method="post" action="{{ url_for('candidates.create_candidate') }}">
           <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
           <div class="row g-3">
             <div class="col-md-3">
-              <label class="form-label">Name</label>
-              <input type="text" name="name" class="form-control" required />
+              <label for="candidate-name" class="form-label">Name</label>
+              <input id="candidate-name" type="text" name="name" class="form-control" required />
             </div>
             <div class="col-md-3">
-              <label class="form-label">Party</label>
-              <input type="text" name="party" class="form-control" placeholder="Optional" />
+              <label for="candidate-party" class="form-label">Party</label>
+              <input id="candidate-party" type="text" name="party" class="form-control" placeholder="Optional" />
             </div>
             <div class="col-md-3">
-              <label class="form-label">Position</label>
-              <input type="text" name="position" class="form-control" required />
+              <label for="candidate-position" class="form-label">Position</label>
+              <input id="candidate-position" type="text" name="position" class="form-control" required />
             </div>
             <div class="col-md-3">
-              <label class="form-label">Region</label>
-              <select name="region_id" class="form-select" required>
+              <label for="candidate-region" class="form-label">Region</label>
+              <select id="candidate-region" name="region_id" class="form-select" required>
                 {% for r in regions %}
                   <option value="{{ r.id }}" {% if delegate_region and r.id == delegate_region.id %}selected{% endif %}>
                     {{ r.name }}
                   </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label for="candidate-election" class="form-label">Draft election</label>
+              <select id="candidate-election" name="election_id" class="form-select" required>
+                {% for election in draft_elections %}
+                  <option value="{{ election.id }}">{{ election.name }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -103,6 +112,9 @@
             <a href="{{ url_for('main.delegate_dashboard') }}" class="btn btn-outline-secondary">Reset</a>
           </div>
         </form>
+        {% else %}
+          <div class="alert alert-info mb-0">Create a draft election before adding candidates. Open and closed election rosters are immutable.</div>
+        {% endif %}
       </div>
     </div>
 
@@ -119,6 +131,7 @@
               <th>Name</th>
               <th>Party</th>
               <th>Position</th>
+              <th>Election</th>
               <th>Region</th>
               <th style="width: 220px;">Actions</th>
             </tr>
@@ -129,6 +142,7 @@
               <td class="fw-semibold">{{ c.name }}</td>
               <td>{{ c.party or "-" }}</td>
               <td>{{ c.position }}</td>
+              <td>{{ c.election.name }} ({{ c.election.status|title }})</td>
               <td>{{ c.region.name }}</td>
               <td>
                 <div class="d-flex gap-2">
@@ -143,6 +157,7 @@
                     data-party="{{ c.party or '' }}"
                     data-position="{{ c.position }}"
                     data-region="{{ c.region_id }}"
+                    {% if c.election.status != 'draft' %}disabled title="Roster locked after voting opens"{% endif %}
                   >
                     <i class="fa-regular fa-pen-to-square"></i> Edit
                   </button>
@@ -151,7 +166,7 @@
                   <form method="post" action="{{ url_for('candidates.delete_candidate', candidate_id=c.id) }}"
                         onsubmit="return confirm('Delete {{ c.name }}?');">
           <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-danger" type="submit">
+                    <button class="btn btn-sm btn-outline-danger" type="submit" {% if c.election.status != 'draft' %}disabled title="Roster locked after voting opens"{% endif %}>
                       <i class="fa-regular fa-trash-can"></i> Delete
                     </button>
                   </form>
@@ -160,7 +175,7 @@
             </tr>
             {% else %}
             <tr>
-              <td colspan="5" class="text-muted">No candidates yet.</td>
+              <td colspan="6" class="text-muted">No candidates yet.</td>
             </tr>
             {% endfor %}
           </tbody>
