@@ -37,7 +37,10 @@ def lock_and_validate_voter(db, user_id):
         db.session.query(ElectoralRoll)
         .filter(ElectoralRoll.user_id == locked_user.id)
         .populate_existing()
-        .with_for_update()
+        # Eligibility is read-only for the voter credential. A shared lock
+        # blocks concurrent approval-state changes without granting UPDATE on
+        # electoral_roll.
+        .with_for_update(read=True)
         .first()
     )
     if (
@@ -68,7 +71,7 @@ def cast_anonymous_vote(db, user, candidate, election=None):
     locked_election = (
         db.session.query(Election)
         .filter(Election.id == election.id)
-        .with_for_update()
+        .with_for_update(read=True)
         .first()
     )
     if locked_election is None or not locked_election.is_open:

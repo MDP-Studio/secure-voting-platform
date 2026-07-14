@@ -422,12 +422,14 @@ def upgrade():
         batch.create_index("ix_candidate_election_id", ["election_id"])
 
     with op.batch_alter_table("vote") as batch:
+        # MySQL can use the legacy unique index to support the user_id foreign
+        # key. Remove the foreign key before its backing index/constraint.
+        for name in sorted(vote_user_fks):
+            batch.drop_constraint(name, type_="foreignkey")
         for name in sorted(vote_user_indexes):
             batch.drop_index(name)
         for name in sorted(vote_user_uniques):
             batch.drop_constraint(name, type_="unique")
-        for name in sorted(vote_user_fks):
-            batch.drop_constraint(name, type_="foreignkey")
         if legacy_vote_user_id:
             batch.drop_column("user_id")
         batch.alter_column(
@@ -454,19 +456,21 @@ def upgrade():
         batch.create_index("ix_vote_election_id", ["election_id"])
 
     with op.batch_alter_table("vote_receipt") as batch:
+        batch.alter_column("election_id", existing_type=sa.Integer(), nullable=False)
+        # Create the replacement user-leading index before removing the legacy
+        # unique index that may back fk_receipt_user on MySQL.
+        batch.create_unique_constraint(
+            "uq_vote_receipt_user_election",
+            ["user_id", "election_id"],
+        )
         if "uq_vote_receipt_user" in receipt_uniques:
             batch.drop_constraint("uq_vote_receipt_user", type_="unique")
-        batch.alter_column("election_id", existing_type=sa.Integer(), nullable=False)
         batch.create_foreign_key(
             "fk_vote_receipt_election",
             "election",
             ["election_id"],
             ["id"],
             ondelete="CASCADE",
-        )
-        batch.create_unique_constraint(
-            "uq_vote_receipt_user_election",
-            ["user_id", "election_id"],
         )
         batch.create_index("ix_vote_receipt_election_id", ["election_id"])
 
@@ -475,28 +479,30 @@ def upgrade():
             batch.drop_column("has_voted")
 
     with op.batch_alter_table("blind_signature_token") as batch:
+        for name in sorted(token_legacy_fks):
+            batch.drop_constraint(name, type_="foreignkey")
         for name in sorted(token_legacy_indexes):
             batch.drop_index(name)
         for name in sorted(token_legacy_uniques - {"uq_blind_sig_token_user"}):
             batch.drop_constraint(name, type_="unique")
-        for name in sorted(token_legacy_fks):
-            batch.drop_constraint(name, type_="foreignkey")
+        batch.alter_column("election_id", existing_type=sa.Integer(), nullable=False)
+        # Preserve an index beginning with user_id while changing uniqueness;
+        # MySQL requires that index for the retained user foreign key.
+        batch.create_unique_constraint(
+            "uq_blind_sig_token_user_election",
+            ["user_id", "election_id"],
+        )
         if "uq_blind_sig_token_user" in token_uniques:
             batch.drop_constraint("uq_blind_sig_token_user", type_="unique")
         for column_name in ("ballot_nonce_hash", "issued_at", "redeemed", "redeemed_at"):
             if column_name in token_columns:
                 batch.drop_column(column_name)
-        batch.alter_column("election_id", existing_type=sa.Integer(), nullable=False)
         batch.create_foreign_key(
             "fk_blind_signature_token_election",
             "election",
             ["election_id"],
             ["id"],
             ondelete="CASCADE",
-        )
-        batch.create_unique_constraint(
-            "uq_blind_sig_token_user_election",
-            ["user_id", "election_id"],
         )
         batch.create_index(
             "ix_blind_signature_token_election_id",

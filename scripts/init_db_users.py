@@ -19,7 +19,9 @@ ADMIN_TABLE_PRIVILEGES = {
     "signed_election_result": "INSERT",
 }
 
-# SELECT is granted database-wide and is sufficient for MySQL 8 locking reads.
+# SELECT is granted database-wide and is sufficient for the FOR SHARE locking
+# reads used by voter flows. Exclusive FOR UPDATE locks stay on admin paths or
+# voter-owned rows where the credential already has UPDATE permission.
 # Writes are limited to state a voter or anonymous registration flow actually
 # owns. In particular, this credential cannot alter election state, the
 # election signing-key anchor, enrolment decisions, or issued authorizations.

@@ -276,7 +276,10 @@ def request_blind_token():
     active_election = (
         db.session.query(Election)
         .filter(Election.id == election_id)
-        .with_for_update()
+        # A shared lock prevents the manager's exclusive close transition
+        # while this authorization transaction is active. MySQL permits FOR
+        # SHARE with SELECT-only credentials, preserving least privilege.
+        .with_for_update(read=True)
         .first()
     )
     if not active_election or not active_election.is_open:
@@ -314,7 +317,7 @@ def request_blind_token():
             user_id=locked_user.id,
             election_id=active_election.id,
         )
-        .with_for_update()
+        .with_for_update(read=True)
         .first()
     )
     existing_receipt = VoteReceipt.query.filter_by(
