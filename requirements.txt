@@ -11,5 +11,5 @@ psutil==5.9.6
 PyJWT==2.13.0
 python-dotenv==1.2.2
 prometheus_client>=0.16.0
-cryptography==48.0.1
+cryptography==50.0.0
 hvac>=2.4.0
